@@ -1,0 +1,16 @@
+{
+  "all": {
+    "active_alias": "n42",
+    "is_default": false,
+    "local_path": "D:\\vworkspace\\bkypro\\dist",
+    "to_path": "/home/hky/test/bkypro",
+    "commands": ["mkdir /home/hky/test/bkypro_bak","sudo cp -r /home/hky/test/bkypro/* /home/hky/test/bkypro_bak/"]
+  },
+  "dev": {
+    "active_alias": "n42",
+    "is_default": true,
+    "local_path": "D:\\vworkspace\\bkypro\\dist",
+    "to_path": "/home/hky/test/bkypro",
+    "commands": []
+  }
+}
