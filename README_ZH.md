@@ -13,6 +13,7 @@
 - 顺序执行远程命令
 - 通过 `sudo -S` 支持 `sudo`
 - 通过 `gscp run -g <group_name>` 执行环境组
+- 通过 `gscp add -r <json_url>` 导入远程服务器配置
 
 ## 构建
 
@@ -30,6 +31,7 @@ go run . <command>
 
 ```bash
 gscp add <alias> <host> <username> <password>
+gscp add -r <json_url>
 gscp init
 gscp ls
 gscp rm <alias>
@@ -41,11 +43,44 @@ gscp run -g <group_name>
 
 ## 服务器管理
 
-添加服务器：
+手动添加单个服务器：
 
 ```bash
 gscp add prod 192.168.1.10 root mypassword
 ```
+
+从远程 JSON 地址导入服务器配置：
+
+```bash
+gscp add -r https://example.com/servers.json
+```
+
+远程 JSON 的结构需要和本地 `servers.json` 一致：
+
+```json
+{
+  "servers": {
+    "prod": {
+      "alias": "prod",
+      "host": "192.168.1.10",
+      "username": "root",
+      "password": "mypassword"
+    },
+    "staging": {
+      "alias": "staging",
+      "host": "192.168.1.20",
+      "username": "deploy",
+      "password": "secret"
+    }
+  }
+}
+```
+
+`add -r` 的融合规则：
+
+- 本地没有的别名会直接追加
+- 如果别名已存在，远程配置会覆盖本地配置
+- 只接受 `http://` 和 `https://` 地址
 
 查看所有服务器：
 
@@ -186,8 +221,9 @@ gscp init
 gscp run
 ```
 
-或者执行一个组：
+或者先导入远程服务器配置：
 
 ```bash
+gscp add -r https://example.com/servers.json
 gscp run -g default
 ```

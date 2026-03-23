@@ -3,10 +3,13 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"gscp/internal/config"
 	"gscp/internal/runconfig"
@@ -40,8 +43,11 @@ func Run(args []string) error {
 }
 
 func runAdd(args []string) error {
+	if len(args) == 2 && strings.TrimSpace(args[0]) == "-r" {
+		return runAddRemote(strings.TrimSpace(args[1]))
+	}
 	if len(args) != 4 {
-		return errors.New("usage: gscp add <alias> <host> <username> <password>")
+		return errors.New("usage: gscp add <alias> <host> <username> <password>\n       gscp add -r <json_url>")
 	}
 
 	store, err := config.Load()
@@ -69,6 +75,65 @@ func runAdd(args []string) error {
 	}
 	fmt.Fprintf(os.Stdout, "server %q saved to %s\n", server.Alias, path)
 	return nil
+}
+
+func runAddRemote(rawURL string) error {
+	if rawURL == "" {
+		return errors.New("usage: gscp add -r <json_url>")
+	}
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		return errors.New("json_url must start with http:// or https://")
+	}
+
+	remoteStore, err := fetchRemoteStore(rawURL)
+	if err != nil {
+		return err
+	}
+
+	store, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	before := len(store.Servers)
+	store.Merge(remoteStore)
+	if err := store.Save(); err != nil {
+		return err
+	}
+
+	path, err := config.Path()
+	if err != nil {
+		return err
+	}
+
+	merged := len(remoteStore.Servers)
+	after := len(store.Servers)
+	fmt.Fprintf(os.Stdout, "merged %d remote servers into %s (total %d, added %d)\n", merged, path, after, after-before)
+	return nil
+}
+
+func fetchRemoteStore(rawURL string) (*config.Store, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("download remote config: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download remote config: unexpected status %s", resp.Status)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read remote config: %w", err)
+	}
+
+	store, err := config.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return store, nil
 }
 
 func runInit(args []string) error {
@@ -285,6 +350,7 @@ func printUsage() {
 
 Usage:
   gscp add <alias> <host> <username> <password>
+  gscp add -r <json_url>
   gscp init
   gscp ls
   gscp rm <alias>

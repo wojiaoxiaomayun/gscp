@@ -13,6 +13,7 @@ It supports:
 - Sequential remote command execution
 - `sudo` support through `sudo -S`
 - Environment groups via `gscp run -g <group_name>`
+- Importing remote server profiles via `gscp add -r <json_url>`
 
 ## Build
 
@@ -30,6 +31,7 @@ go run . <command>
 
 ```bash
 gscp add <alias> <host> <username> <password>
+gscp add -r <json_url>
 gscp init
 gscp ls
 gscp rm <alias>
@@ -41,11 +43,44 @@ gscp run -g <group_name>
 
 ## Server Management
 
-Add a server:
+Add one server manually:
 
 ```bash
 gscp add prod 192.168.1.10 root mypassword
 ```
+
+Import server profiles from a remote JSON file:
+
+```bash
+gscp add -r https://example.com/servers.json
+```
+
+The remote JSON must use the same structure as the local `servers.json` file:
+
+```json
+{
+  "servers": {
+    "prod": {
+      "alias": "prod",
+      "host": "192.168.1.10",
+      "username": "root",
+      "password": "mypassword"
+    },
+    "staging": {
+      "alias": "staging",
+      "host": "192.168.1.20",
+      "username": "deploy",
+      "password": "secret"
+    }
+  }
+}
+```
+
+Merge rules for `add -r`:
+
+- New aliases are appended to the local config
+- Existing aliases are overwritten by the remote config
+- Only `http://` and `https://` URLs are accepted
 
 List all saved servers:
 
@@ -185,8 +220,9 @@ gscp init
 gscp run
 ```
 
-Or run a group:
+Or import a remote server list first:
 
 ```bash
+gscp add -r https://example.com/servers.json
 gscp run -g default
 ```

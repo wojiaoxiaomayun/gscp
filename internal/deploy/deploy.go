@@ -76,6 +76,13 @@ type progressReporter struct {
 	currentFileIndex int
 }
 
+type commandStreamer struct {
+	notify  func(Event)
+	command string
+	buffer  strings.Builder
+	mu      sync.Mutex
+}
+
 func (r Runner) Run(server config.Server, workingDir string, plan Plan) error {
 	if strings.TrimSpace(plan.LocalPath) == "" {
 		return fmt.Errorf("env %q missing local_path", plan.EnvKey)
@@ -126,18 +133,9 @@ func (r Runner) Run(server config.Server, workingDir string, plan Plan) error {
 	commands := normalizeCommands(plan.Commands)
 	if len(commands) > 0 {
 		r.emit(Event{Type: EventStatus, Message: fmt.Sprintf("running %d remote commands", len(commands))})
-		for index, command := range commands {
-			r.emit(Event{Type: EventCommandStart, Command: command, Message: fmt.Sprintf("command %d/%d: %s", index+1, len(commands), command)})
-		}
-
-		output, err := runRemoteCommands(client, commands, server.Password)
-		if output != "" {
-			r.emit(Event{Type: EventCommandOutput, Command: strings.Join(commands, " && "), Output: output})
-		}
-		if err != nil {
+		if err := runRemoteCommands(client, commands, server.Password, r.Notify); err != nil {
 			return fmt.Errorf("run remote commands: %w", err)
 		}
-
 		r.emit(Event{Type: EventCommandDone, Command: strings.Join(commands, " && "), Message: fmt.Sprintf("remote commands finished (%d)", len(commands))})
 	}
 
@@ -248,10 +246,10 @@ func uploadFile(client *sftp.Client, item uploadItem, index int, progress *progr
 	return nil
 }
 
-func runRemoteCommands(client *ssh.Client, commands []string, sudoPassword string) (string, error) {
+func runRemoteCommands(client *ssh.Client, commands []string, sudoPassword string, notify func(Event)) error {
 	session, err := client.NewSession()
 	if err != nil {
-		return "", fmt.Errorf("create ssh session: %w", err)
+		return fmt.Errorf("create ssh session: %w", err)
 	}
 	defer session.Close()
 
@@ -261,13 +259,44 @@ func runRemoteCommands(client *ssh.Client, commands []string, sudoPassword strin
 		ssh.TTY_OP_OSPEED: 14400,
 	}
 	if err := session.RequestPty("xterm", 80, 40, modes); err != nil {
-		return "", fmt.Errorf("request pty: %w", err)
+		return fmt.Errorf("request pty: %w", err)
+	}
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("create stdout pipe: %w", err)
+	}
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("create stderr pipe: %w", err)
 	}
 
 	script := buildCommandScript(commands, sudoPassword)
 	remoteCommand := "sh -lc " + shellSingleQuote(script)
-	output, err := session.CombinedOutput(remoteCommand)
-	return string(output), err
+	streamer := &commandStreamer{notify: notify, command: strings.Join(commands, " && ")}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		streamer.read(stdout)
+	}()
+	go func() {
+		defer wg.Done()
+		streamer.read(stderr)
+	}()
+
+	if err := session.Start(remoteCommand); err != nil {
+		return fmt.Errorf("start remote command: %w", err)
+	}
+
+	waitErr := session.Wait()
+	wg.Wait()
+	streamer.flush()
+	if waitErr != nil {
+		return waitErr
+	}
+	return nil
 }
 
 func buildCommandScript(commands []string, sudoPassword string) string {
@@ -395,4 +424,86 @@ func (p *progressReporter) emitLocked(force bool) {
 		SpeedBytes:       speed,
 		ETA:              eta,
 	})
+}
+
+func (s *commandStreamer) read(reader io.Reader) {
+	buf := make([]byte, 1024)
+	for {
+		n, err := reader.Read(buf)
+		if n > 0 {
+			s.write(buf[:n])
+		}
+		if err != nil {
+			if err == io.EOF {
+				return
+			}
+			s.emitLine("ERROR: " + err.Error())
+			return
+		}
+	}
+}
+
+func (s *commandStreamer) write(data []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.buffer.Write(data)
+	for {
+		content := s.buffer.String()
+		index := strings.IndexByte(content, '\n')
+		if index < 0 {
+			return
+		}
+		line := strings.TrimRight(content[:index], "\r")
+		remaining := content[index+1:]
+		s.buffer.Reset()
+		s.buffer.WriteString(remaining)
+		s.emitLineLocked(line)
+	}
+}
+
+func (s *commandStreamer) flush() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	remaining := strings.TrimSpace(s.buffer.String())
+	if remaining == "" {
+		return
+	}
+	s.buffer.Reset()
+	s.emitLineLocked(remaining)
+}
+
+func (s *commandStreamer) emitLine(line string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.emitLineLocked(line)
+}
+
+func (s *commandStreamer) emitLineLocked(line string) {
+	line = strings.TrimRight(line, "\r")
+	if line == "" || s.notify == nil {
+		return
+	}
+
+	s.notify(Event{Type: EventCommandOutput, Command: s.command, Output: line})
+	if strings.HasPrefix(line, ">>> ") {
+		s.notify(Event{Type: EventCommandStart, Command: strings.TrimPrefix(extractMarkerCommand(line), ""), Message: line})
+		return
+	}
+	if strings.HasPrefix(line, "<<< done ") {
+		s.notify(Event{Type: EventCommandDone, Command: extractMarkerCommand(strings.TrimPrefix(line, "<<< done ")), Message: line})
+	}
+}
+
+func extractMarkerCommand(line string) string {
+	clean := strings.TrimSpace(strings.TrimPrefix(line, ">>>"))
+	clean = strings.TrimSpace(strings.TrimPrefix(clean, "<<< done"))
+	if !strings.HasPrefix(clean, "[") {
+		return clean
+	}
+	if idx := strings.Index(clean, "] "); idx >= 0 && idx+2 <= len(clean) {
+		return clean[idx+2:]
+	}
+	return clean
 }

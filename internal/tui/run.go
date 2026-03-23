@@ -231,7 +231,6 @@ func (m *runModel) applyEvent(event deploy.Event) {
 	case deploy.EventCommandStart:
 		m.currentCommand = event.Command
 		m.status = event.Message
-		m.logs = append(m.logs, event.Message)
 	case deploy.EventCommandOutput:
 		trimmed := strings.TrimSpace(event.Output)
 		if trimmed != "" {
@@ -241,8 +240,12 @@ func (m *runModel) applyEvent(event deploy.Event) {
 		}
 	case deploy.EventCommandDone:
 		m.status = event.Message
-		m.currentCommand = ""
-		m.logs = append(m.logs, event.Message)
+		if strings.HasPrefix(event.Message, "<<< done ") {
+			m.currentCommand = ""
+		} else {
+			m.currentCommand = ""
+			m.logs = append(m.logs, event.Message)
+		}
 	}
 	if len(m.logs) > 10 {
 		m.logs = m.logs[len(m.logs)-10:]
@@ -349,6 +352,7 @@ func bar(ratio float64, width int, fill lipgloss.Style) string {
 	}
 	return "[" + fill.Render(strings.Repeat("=", filled)) + progressTrackStyle.Render(strings.Repeat("-", width-filled)) + "]"
 }
+
 func progressRatio(done, total int64) float64 {
 	if total <= 0 {
 		if done > 0 {
@@ -358,6 +362,7 @@ func progressRatio(done, total int64) float64 {
 	}
 	return float64(done) / float64(total)
 }
+
 func humanSize(size int64) string {
 	const unit = 1024
 	if size < unit {
@@ -372,6 +377,7 @@ func humanSize(size int64) string {
 	}
 	return fmt.Sprintf("%.2f %s", value, units[idx])
 }
+
 func formatDuration(d time.Duration) string {
 	if d <= 0 {
 		return "--"
@@ -385,6 +391,7 @@ func formatDuration(d time.Duration) string {
 	}
 	return fmt.Sprintf("%02d:%02d", minutes, secs)
 }
+
 func filepathBase(path string) string {
 	parts := strings.Split(strings.ReplaceAll(path, "\\", "/"), "/")
 	if len(parts) == 0 {
@@ -392,6 +399,7 @@ func filepathBase(path string) string {
 	}
 	return parts[len(parts)-1]
 }
+
 func renderStatusBadge(phase, status string) string {
 	switch phase {
 	case "running":
@@ -404,9 +412,11 @@ func renderStatusBadge(phase, status string) string {
 		return statusIdleStyle.Render(" " + status + " ")
 	}
 }
+
 func renderFact(label, value string) string {
 	return labelStyle.Render(label+": ") + valueStyle.Render(value)
 }
+
 func renderMeter(label string, ratio float64, meta string, fill lipgloss.Style) string {
 	return fmt.Sprintf("%s  %s  %6.2f%%  %s", valueStyle.Render(label), bar(ratio, 30, fill), ratio*100, metaStyle.Render(meta))
 }
