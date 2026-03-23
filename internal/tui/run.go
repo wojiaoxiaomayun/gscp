@@ -15,115 +15,39 @@ import (
 )
 
 var (
-	appStyle = lipgloss.NewStyle().
-			Padding(1, 2)
-
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#F9FAFB")).
-			Background(lipgloss.Color("#1F3A5F")).
-			Padding(0, 1)
-
-	subtitleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#94A3B8"))
-
-	panelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#E5E7EB")).
-			Background(lipgloss.Color("#111827")).
-			Padding(1, 2)
-
-	selectedEnvStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#111827")).
-				Background(lipgloss.Color("#F59E0B")).
-				Padding(0, 1)
-
-	envStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#E5E7EB")).
-			Padding(0, 1)
-
-	metaStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#94A3B8"))
-
-	labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#94A3B8"))
-
-	valueStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#F9FAFB"))
-
-	statusRunningStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#111827")).
-				Background(lipgloss.Color("#34D399")).
-				Padding(0, 1)
-
-	statusDoneStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#111827")).
-			Background(lipgloss.Color("#A3E635")).
-			Padding(0, 1)
-
-	statusErrorStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#F9FAFB")).
-				Background(lipgloss.Color("#DC2626")).
-				Padding(0, 1)
-
-	statusIdleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#111827")).
-			Background(lipgloss.Color("#CBD5E1")).
-			Padding(0, 1)
-
-	progressTrackStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#374151"))
-
-	totalFillStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F59E0B"))
-
-	fileFillStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#60A5FA"))
-
-	logTitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#F9FAFB"))
-
-	logLineStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#D1D5DB"))
-
-	hintStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#94A3B8"))
-
-	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FCA5A5")).
-			Bold(true)
-
-	commandStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FDE68A")).
-			Bold(true)
-
-	failureBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#DC2626")).
-			Foreground(lipgloss.Color("#FCA5A5")).
-			Padding(0, 1)
+	appStyle           = lipgloss.NewStyle().Padding(1, 2)
+	titleStyle         = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F9FAFB")).Background(lipgloss.Color("#1F3A5F")).Padding(0, 1)
+	subtitleStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#94A3B8"))
+	panelStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#E5E7EB")).Background(lipgloss.Color("#111827")).Padding(1, 2)
+	selectedEnvStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#111827")).Background(lipgloss.Color("#F59E0B")).Padding(0, 1)
+	envStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("#E5E7EB")).Padding(0, 1)
+	metaStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#94A3B8"))
+	labelStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#94A3B8"))
+	valueStyle         = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F9FAFB"))
+	statusRunningStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#111827")).Background(lipgloss.Color("#34D399")).Padding(0, 1)
+	statusDoneStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#111827")).Background(lipgloss.Color("#A3E635")).Padding(0, 1)
+	statusErrorStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F9FAFB")).Background(lipgloss.Color("#DC2626")).Padding(0, 1)
+	statusIdleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#111827")).Background(lipgloss.Color("#CBD5E1")).Padding(0, 1)
+	progressTrackStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#374151"))
+	totalFillStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B"))
+	fileFillStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#60A5FA"))
+	logTitleStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F9FAFB"))
+	logLineStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB"))
+	hintStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#94A3B8"))
+	errorStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#FCA5A5")).Bold(true)
+	commandStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#FDE68A")).Bold(true)
+	failureBoxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#DC2626")).Foreground(lipgloss.Color("#FCA5A5")).Padding(0, 1)
 )
 
-type runFinishedMsg struct {
-	err error
-}
-
-type runEventMsg struct {
-	event deploy.Event
-}
+type runFinishedMsg struct{ err error }
+type runEventMsg struct{ event deploy.Event }
 
 type runModel struct {
-	envKeys    []string
-	targets    map[string]runconfig.Target
-	servers    map[string]config.Server
-	workingDir string
-
+	envKeys        []string
+	targets        map[string]runconfig.Target
+	servers        map[string]config.Server
+	workingDir     string
+	autoExit       bool
 	selected       int
 	chosenEnv      string
 	phase          string
@@ -135,42 +59,30 @@ type runModel struct {
 	quitting       bool
 	started        bool
 	events         chan tea.Msg
-
-	totalBytes int64
-	written    int64
-	totalFiles int
-	fileIndex  int
-	fileName   string
-	fileSize   int64
-	fileDone   int64
-	speed      float64
-	eta        time.Duration
-	logs       []string
+	totalBytes     int64
+	written        int64
+	totalFiles     int
+	fileIndex      int
+	fileName       string
+	fileSize       int64
+	fileDone       int64
+	speed          float64
+	eta            time.Duration
+	logs           []string
 }
 
-func Run(envKeys []string, targets map[string]runconfig.Target, servers map[string]config.Server, explicitEnv string, workingDir string) error {
-	model := runModel{
-		envKeys:    envKeys,
-		targets:    targets,
-		servers:    servers,
-		workingDir: workingDir,
-		events:     make(chan tea.Msg, 128),
-		phase:      "select",
-		status:     "Choose an environment",
-	}
-
+func Run(envKeys []string, targets map[string]runconfig.Target, servers map[string]config.Server, explicitEnv string, workingDir string, autoExit bool) error {
+	model := runModel{envKeys: envKeys, targets: targets, servers: servers, workingDir: workingDir, events: make(chan tea.Msg, 128), phase: "select", status: "Choose an environment", autoExit: autoExit}
 	if explicitEnv != "" {
 		model.chosenEnv = explicitEnv
 		model.phase = "running"
 		model.status = "Preparing deployment"
 	}
-
 	program := tea.NewProgram(model)
 	finalModel, err := program.Run()
 	if err != nil {
 		return err
 	}
-
 	result, ok := finalModel.(runModel)
 	if !ok {
 		return nil
@@ -236,6 +148,9 @@ func (m runModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.failedCommand = m.currentCommand
 			}
 			m.logs = append(m.logs, "ERROR: "+msg.err.Error())
+			if m.autoExit {
+				return m, tea.Quit
+			}
 			return m, nil
 		}
 		m.phase = "done"
@@ -243,9 +158,11 @@ func (m runModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "Deployment finished"
 		m.currentCommand = ""
 		m.logs = append(m.logs, "Deployment finished")
+		if m.autoExit {
+			return m, tea.Quit
+		}
 		return m, nil
 	}
-
 	return m, nil
 }
 
@@ -253,7 +170,6 @@ func (m runModel) View() string {
 	if m.quitting {
 		return "\n"
 	}
-
 	switch m.phase {
 	case "select":
 		return m.selectView()
@@ -269,29 +185,17 @@ func (m *runModel) startRunCmd() tea.Cmd {
 		return waitForEvent(m.events)
 	}
 	m.started = true
-
 	envKey := m.chosenEnv
 	target := m.targets[envKey]
 	server := m.servers[target.ActiveAlias]
 	workingDir := m.workingDir
 	ch := m.events
-
 	go func() {
-		runner := deploy.Runner{
-			Notify: func(event deploy.Event) {
-				ch <- runEventMsg{event: event}
-			},
-		}
-		err := runner.Run(server, workingDir, deploy.Plan{
-			EnvKey:    envKey,
-			LocalPath: target.LocalPath,
-			ToPath:    target.ToPath,
-			Commands:  target.Commands,
-		})
+		runner := deploy.Runner{Notify: func(event deploy.Event) { ch <- runEventMsg{event: event} }}
+		err := runner.Run(server, workingDir, deploy.Plan{EnvKey: envKey, LocalPath: target.LocalPath, ToPath: target.ToPath, Commands: target.Commands})
 		ch <- runFinishedMsg{err: err}
 		close(ch)
 	}()
-
 	return waitForEvent(ch)
 }
 
@@ -340,7 +244,6 @@ func (m *runModel) applyEvent(event deploy.Event) {
 		m.currentCommand = ""
 		m.logs = append(m.logs, event.Message)
 	}
-
 	if len(m.logs) > 10 {
 		m.logs = m.logs[len(m.logs)-10:]
 	}
@@ -373,7 +276,6 @@ func (m runModel) selectView() string {
 func (m runModel) progressView() string {
 	target := m.targets[m.chosenEnv]
 	server := m.servers[target.ActiveAlias]
-
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(" gscp deploy "))
 	b.WriteString("\n")
@@ -394,19 +296,9 @@ func (m runModel) progressView() string {
 		b.WriteString(failureBoxStyle.Render("Failed command: " + m.failedCommand))
 	}
 	b.WriteString("\n\n")
-	b.WriteString(renderMeter(
-		"Total",
-		progressRatio(m.written, m.totalBytes),
-		humanSize(m.written)+"/"+humanSize(m.totalBytes),
-		totalFillStyle,
-	))
+	b.WriteString(renderMeter("Total", progressRatio(m.written, m.totalBytes), humanSize(m.written)+"/"+humanSize(m.totalBytes), totalFillStyle))
 	b.WriteString("\n")
-	b.WriteString(renderMeter(
-		fmt.Sprintf("File %d/%d", m.fileIndex, m.totalFiles),
-		progressRatio(m.fileDone, m.fileSize),
-		fmt.Sprintf("%s  %s/%s", filepathBase(m.fileName), humanSize(m.fileDone), humanSize(m.fileSize)),
-		fileFillStyle,
-	))
+	b.WriteString(renderMeter(fmt.Sprintf("File %d/%d", m.fileIndex, m.totalFiles), progressRatio(m.fileDone, m.fileSize), fmt.Sprintf("%s  %s/%s", filepathBase(m.fileName), humanSize(m.fileDone), humanSize(m.fileSize)), fileFillStyle))
 	b.WriteString("\n\n")
 	b.WriteString(renderFact("Speed", humanSize(int64(m.speed))+"/s"))
 	b.WriteString("   ")
@@ -429,15 +321,17 @@ func (m runModel) progressView() string {
 		b.WriteString("\n")
 		b.WriteString(hintStyle.Render("q to quit"))
 	}
-	if m.phase == "done" {
+	if m.phase == "done" && !m.autoExit {
 		b.WriteString("\n")
 		b.WriteString(hintStyle.Render("press enter or q to exit"))
 	}
 	if m.phase == "error" {
 		b.WriteString("\n")
 		b.WriteString(errorStyle.Render("Error: " + m.errorText))
-		b.WriteString("\n")
-		b.WriteString(hintStyle.Render("press enter or q to exit"))
+		if !m.autoExit {
+			b.WriteString("\n")
+			b.WriteString(hintStyle.Render("press enter or q to exit"))
+		}
 	}
 	return appStyle.Render(panelStyle.Render(b.String()))
 }
@@ -455,7 +349,6 @@ func bar(ratio float64, width int, fill lipgloss.Style) string {
 	}
 	return "[" + fill.Render(strings.Repeat("=", filled)) + progressTrackStyle.Render(strings.Repeat("-", width-filled)) + "]"
 }
-
 func progressRatio(done, total int64) float64 {
 	if total <= 0 {
 		if done > 0 {
@@ -465,7 +358,6 @@ func progressRatio(done, total int64) float64 {
 	}
 	return float64(done) / float64(total)
 }
-
 func humanSize(size int64) string {
 	const unit = 1024
 	if size < unit {
@@ -480,7 +372,6 @@ func humanSize(size int64) string {
 	}
 	return fmt.Sprintf("%.2f %s", value, units[idx])
 }
-
 func formatDuration(d time.Duration) string {
 	if d <= 0 {
 		return "--"
@@ -494,7 +385,6 @@ func formatDuration(d time.Duration) string {
 	}
 	return fmt.Sprintf("%02d:%02d", minutes, secs)
 }
-
 func filepathBase(path string) string {
 	parts := strings.Split(strings.ReplaceAll(path, "\\", "/"), "/")
 	if len(parts) == 0 {
@@ -502,7 +392,6 @@ func filepathBase(path string) string {
 	}
 	return parts[len(parts)-1]
 }
-
 func renderStatusBadge(phase, status string) string {
 	switch phase {
 	case "running":
@@ -515,17 +404,9 @@ func renderStatusBadge(phase, status string) string {
 		return statusIdleStyle.Render(" " + status + " ")
 	}
 }
-
 func renderFact(label, value string) string {
 	return labelStyle.Render(label+": ") + valueStyle.Render(value)
 }
-
 func renderMeter(label string, ratio float64, meta string, fill lipgloss.Style) string {
-	return fmt.Sprintf(
-		"%s  %s  %6.2f%%  %s",
-		valueStyle.Render(label),
-		bar(ratio, 30, fill),
-		ratio*100,
-		metaStyle.Render(meta),
-	)
+	return fmt.Sprintf("%s  %s  %6.2f%%  %s", valueStyle.Render(label), bar(ratio, 30, fill), ratio*100, metaStyle.Render(meta))
 }

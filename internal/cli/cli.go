@@ -63,12 +63,10 @@ func runAdd(args []string) error {
 	if err := store.Save(); err != nil {
 		return err
 	}
-
 	path, err := config.Path()
 	if err != nil {
 		return err
 	}
-
 	fmt.Fprintf(os.Stdout, "server %q saved to %s\n", server.Alias, path)
 	return nil
 }
@@ -158,8 +156,8 @@ func runRemove(args []string) error {
 }
 
 func runExecute(args []string) error {
-	if len(args) > 1 {
-		return errors.New("usage: gscp run [-d|env_key]")
+	if len(args) > 2 {
+		return errors.New("usage: gscp run [-d|env_key|-g group_name]")
 	}
 
 	workingDir, err := os.Getwd()
@@ -167,14 +165,14 @@ func runExecute(args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	targets, _, err := runconfig.LoadFromDir(workingDir)
+	cfg, _, err := runconfig.LoadConfigFromDir(workingDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return errors.New("未发现配置文件")
 		}
 		return err
 	}
-	if len(targets) == 0 {
+	if len(cfg.Targets) == 0 {
 		return errors.New(".genv 中未配置任何环境")
 	}
 
@@ -183,9 +181,9 @@ func runExecute(args []string) error {
 		return err
 	}
 
-	envKeys := sortedEnvKeys(targets)
+	envKeys := sortedEnvKeys(cfg.Targets)
 	for _, envKey := range envKeys {
-		target := targets[envKey]
+		target := cfg.Targets[envKey]
 		if target.ActiveAlias == "" {
 			return fmt.Errorf("env %q missing active_alias", envKey)
 		}
@@ -195,23 +193,65 @@ func runExecute(args []string) error {
 	}
 
 	explicitEnv := ""
-	if len(args) == 1 {
-		arg := strings.TrimSpace(args[0])
-		switch arg {
-		case "-d":
-			explicitEnv, err = selectDefaultEnv(targets)
-			if err != nil {
-				return err
-			}
-		default:
-			explicitEnv = arg
-			if _, ok := targets[explicitEnv]; !ok {
-				return fmt.Errorf("env %q not found", explicitEnv)
-			}
+	if len(args) == 0 {
+		return tui.Run(envKeys, cfg.Targets, store.Servers, explicitEnv, workingDir, false)
+	}
+
+	arg := strings.TrimSpace(args[0])
+	switch arg {
+	case "-d":
+		if len(args) != 1 {
+			return errors.New("usage: gscp run -d")
+		}
+		explicitEnv, err = selectDefaultEnv(cfg.Targets)
+		if err != nil {
+			return err
+		}
+		return tui.Run(envKeys, cfg.Targets, store.Servers, explicitEnv, workingDir, false)
+	case "-g":
+		if len(args) != 2 {
+			return errors.New("usage: gscp run -g <group_name>")
+		}
+		return runGroup(strings.TrimSpace(args[1]), cfg, store.Servers, workingDir)
+	default:
+		if len(args) != 1 {
+			return errors.New("usage: gscp run <env_key>")
+		}
+		explicitEnv = arg
+		if _, ok := cfg.Targets[explicitEnv]; !ok {
+			return fmt.Errorf("env %q not found", explicitEnv)
+		}
+		return tui.Run(envKeys, cfg.Targets, store.Servers, explicitEnv, workingDir, false)
+	}
+}
+
+func runGroup(groupName string, cfg *runconfig.ConfigFile, servers map[string]config.Server, workingDir string) error {
+	members, ok := cfg.Groups[groupName]
+	if !ok {
+		return fmt.Errorf("group %q not found", groupName)
+	}
+	if len(members) == 0 {
+		return fmt.Errorf("group %q has no environments", groupName)
+	}
+
+	envKeys := sortedEnvKeys(cfg.Targets)
+	for index, envKey := range members {
+		envKey = strings.TrimSpace(envKey)
+		if envKey == "" {
+			return fmt.Errorf("group %q contains an empty environment name", groupName)
+		}
+		if _, ok := cfg.Targets[envKey]; !ok {
+			return fmt.Errorf("group %q references unknown env %q", groupName, envKey)
+		}
+
+		fmt.Fprintf(os.Stdout, "running group %q (%d/%d): %s\n", groupName, index+1, len(members), envKey)
+		if err := tui.Run(envKeys, cfg.Targets, servers, envKey, workingDir, true); err != nil {
+			return err
 		}
 	}
 
-	return tui.Run(envKeys, targets, store.Servers, explicitEnv, workingDir)
+	fmt.Fprintf(os.Stdout, "group %q finished\n", groupName)
+	return nil
 }
 
 func sortedEnvKeys(targets map[string]runconfig.Target) []string {
@@ -251,25 +291,24 @@ Usage:
   gscp run
   gscp run <env_key>
   gscp run -d
+  gscp run -g <group_name>
 
 The run command reads .genv from the current working directory.
 Without arguments it opens an interactive environment picker.
 With -d it runs the env marked by is_default=true.
+With -g it runs all envs in the named group sequentially.
 Example .genv:
   {
+    "groups": {
+      "default": ["dev"],
+      "prod-all": ["web", "worker"]
+    },
     "dev": {
       "active_alias": "dev-server",
       "is_default": true,
       "local_path": "./dist",
       "to_path": "/var/www/dev",
       "commands": ["cd /var/www/dev", "pm2 restart dev-app"]
-    },
-    "pro": {
-      "active_alias": "prod-server",
-      "is_default": false,
-      "local_path": "./dist",
-      "to_path": "/var/www/prod",
-      "commands": ["cd /var/www/prod", "pm2 restart prod-app"]
     }
   }`)
 }

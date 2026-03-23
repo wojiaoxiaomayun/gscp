@@ -11,6 +11,9 @@ import (
 const FileName = ".genv"
 
 const defaultTemplate = `{
+  "groups": {
+    "default": ["dev"]
+  },
   "dev": {
     "active_alias": "%s",
     "is_default": true,
@@ -32,19 +35,52 @@ type Target struct {
 	Commands    []string `json:"commands"`
 }
 
-func LoadFromDir(dir string) (map[string]Target, string, error) {
+type ConfigFile struct {
+	Targets map[string]Target
+	Groups  map[string][]string
+}
+
+func LoadConfigFromDir(dir string) (*ConfigFile, string, error) {
 	path := filepath.Join(dir, FileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, path, err
 	}
 
-	targets := map[string]Target{}
-	if err := json.Unmarshal(data, &targets); err != nil {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, path, fmt.Errorf("parse %s: %w", FileName, err)
 	}
 
-	return targets, path, nil
+	cfg := &ConfigFile{
+		Targets: map[string]Target{},
+		Groups:  map[string][]string{},
+	}
+
+	for key, value := range raw {
+		if key == "groups" {
+			if err := json.Unmarshal(value, &cfg.Groups); err != nil {
+				return nil, path, fmt.Errorf("parse %s groups: %w", FileName, err)
+			}
+			continue
+		}
+
+		var target Target
+		if err := json.Unmarshal(value, &target); err != nil {
+			return nil, path, fmt.Errorf("parse %s target %q: %w", FileName, key, err)
+		}
+		cfg.Targets[key] = target
+	}
+
+	return cfg, path, nil
+}
+
+func LoadFromDir(dir string) (map[string]Target, string, error) {
+	cfg, path, err := LoadConfigFromDir(dir)
+	if err != nil {
+		return nil, path, err
+	}
+	return cfg.Targets, path, nil
 }
 
 func InitInDir(dir string, alias string) (string, error) {
