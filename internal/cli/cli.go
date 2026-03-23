@@ -47,7 +47,7 @@ func runAdd(args []string) error {
 		return runAddRemote(strings.TrimSpace(args[1]))
 	}
 	if len(args) != 4 {
-		return errors.New("usage: gscp add <alias> <host> <username> <password>\n       gscp add -r <json_url>")
+		return errors.New("usage: gscp add <alias> <host[:port]> <username> <password>\n       gscp add -r <json_url>")
 	}
 
 	store, err := config.Load()
@@ -62,7 +62,7 @@ func runAdd(args []string) error {
 		Password: args[3],
 	}
 	if server.Alias == "" || server.Host == "" || server.Username == "" || server.Password == "" {
-		return errors.New("alias, host, username and password cannot be empty")
+		return errors.New("alias, host[:port], username and password cannot be empty")
 	}
 
 	store.Upsert(server)
@@ -349,7 +349,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stdout, `gscp manages remote server profiles for file uploads.
 
 Usage:
-  gscp add <alias> <host> <username> <password>
+  gscp add <alias> <host[:port]> <username> <password>
   gscp add -r <json_url>
   gscp init
   gscp ls
@@ -363,6 +363,7 @@ The run command reads .genv from the current working directory.
 Without arguments it opens an interactive environment picker.
 With -d it runs the env marked by is_default=true.
 With -g it runs all envs in the named group sequentially.
+If host does not include a port, SSH defaults to 22.
 Example .genv:
   {
     "groups": {

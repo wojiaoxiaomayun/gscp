@@ -30,7 +30,7 @@ go run . <command>
 ## Commands
 
 ```bash
-gscp add <alias> <host> <username> <password>
+gscp add <alias> <host[:port]> <username> <password>
 gscp add -r <json_url>
 gscp init
 gscp ls
@@ -47,7 +47,10 @@ Add one server manually:
 
 ```bash
 gscp add prod 192.168.1.10 root mypassword
+gscp add prod 192.168.1.10:2222 root mypassword
 ```
+
+If no port is provided, SSH defaults to `22`.
 
 Import server profiles from a remote JSON file:
 
@@ -62,7 +65,7 @@ The remote JSON must use the same structure as the local `servers.json` file:
   "servers": {
     "prod": {
       "alias": "prod",
-      "host": "192.168.1.10",
+      "host": "192.168.1.10:2222",
       "username": "root",
       "password": "mypassword"
     },
@@ -215,7 +218,7 @@ It also requests a TTY for remote command execution so servers that require a TT
 ## Example Workflow
 
 ```bash
-gscp add demo 10.0.0.8 root secret123
+gscp add demo 10.0.0.8:2222 root secret123
 gscp init
 gscp run
 ```

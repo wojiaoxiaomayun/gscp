@@ -30,7 +30,7 @@ go run . <command>
 ## 命令
 
 ```bash
-gscp add <alias> <host> <username> <password>
+gscp add <alias> <host[:port]> <username> <password>
 gscp add -r <json_url>
 gscp init
 gscp ls
@@ -47,7 +47,10 @@ gscp run -g <group_name>
 
 ```bash
 gscp add prod 192.168.1.10 root mypassword
+gscp add prod 192.168.1.10:2222 root mypassword
 ```
+
+如果没有填写端口，SSH 默认使用 `22`。
 
 从远程 JSON 地址导入服务器配置：
 
@@ -62,7 +65,7 @@ gscp add -r https://example.com/servers.json
   "servers": {
     "prod": {
       "alias": "prod",
-      "host": "192.168.1.10",
+      "host": "192.168.1.10:2222",
       "username": "root",
       "password": "mypassword"
     },
@@ -216,7 +219,7 @@ gscp run -g prod-all
 ## 示例流程
 
 ```bash
-gscp add demo 10.0.0.8 root secret123
+gscp add demo 10.0.0.8:2222 root secret123
 gscp init
 gscp run
 ```
