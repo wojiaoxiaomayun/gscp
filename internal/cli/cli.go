@@ -259,7 +259,7 @@ func runExecute(args []string) error {
 
 	explicitEnv := ""
 	if len(args) == 0 {
-		return tui.Run(envKeys, cfg.Targets, store.Servers, explicitEnv, workingDir, false)
+		return tui.Run(envKeys, cfg.Targets, store.Servers, explicitEnv, workingDir, true)
 	}
 
 	arg := strings.TrimSpace(args[0])
@@ -272,7 +272,7 @@ func runExecute(args []string) error {
 		if err != nil {
 			return err
 		}
-		return tui.Run(envKeys, cfg.Targets, store.Servers, explicitEnv, workingDir, false)
+		return tui.Run(envKeys, cfg.Targets, store.Servers, explicitEnv, workingDir, true)
 	case "-g":
 		if len(args) != 2 {
 			return errors.New("usage: gscp run -g <group_name>")
@@ -286,7 +286,7 @@ func runExecute(args []string) error {
 		if _, ok := cfg.Targets[explicitEnv]; !ok {
 			return fmt.Errorf("env %q not found", explicitEnv)
 		}
-		return tui.Run(envKeys, cfg.Targets, store.Servers, explicitEnv, workingDir, false)
+		return tui.Run(envKeys, cfg.Targets, store.Servers, explicitEnv, workingDir, true)
 	}
 }
 
