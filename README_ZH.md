@@ -14,6 +14,10 @@
 - 通过 `sudo -S` 支持 `sudo`
 - 通过 `gscp run -g <group_name>` 执行环境组
 - 通过 `gscp add -r <json_url>` 导入远程服务器配置
+- 通过 `gscp serve` 启动本地 Web UI，管理服务器、工作区和 `.genv` 文件
+- 执行 `init` 和 `run` 时自动记录工作区路径
+- 扫描文件系统，发现可配置根目录下的所有 `.genv` 文件
+- 可配置扫描设置（跳过目录、扫描根目录）
 
 ## 构建
 
@@ -39,6 +43,7 @@ gscp run
 gscp run <env_key>
 gscp run -d
 gscp run -g <group_name>
+gscp serve [addr]
 ```
 
 ## 服务器管理
@@ -212,15 +217,59 @@ gscp run -g prod-all
 
 ## 工作区记录
 
-每次执行 `gscp init` 或 `gscp run` 时，`gscp` 会自动把当前目录追加到全局配置的 `workspaces` 列表中（去重）。
+每次执行 `gscp init` 或 `gscp run` 时，`gscp` 会自动把当前目录追加到全局配置的 `workspaces` 列表中（去重）。这样 Web UI 就能发现所有曾经使用过 `gscp` 的项目目录，方便统一管理。
 
-这样 `gscp serve` 的网页端就能通过 `GET /api/workspaces` 获取所有曾经使用过的项目目录，方便后续在 Web UI 中统一管理各目录下的 `.genv` 文件。
+## Web UI（`gscp serve`）
 
-如果需要从列表中移除某个目录，可以调用 `DELETE /api/workspaces`，请求体为：
+启动本地 Web 服务器，通过浏览器管理服务器配置、工作区和 `.genv` 文件：
+
+```bash
+gscp serve          # 监听 :8080
+gscp serve :9090    # 自定义端口
+```
+
+在浏览器中打开 `http://localhost:8080`。
+
+### REST API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/servers` | 列出所有服务器配置 |
+| `POST` | `/api/servers` | 新增或更新服务器配置 |
+| `PUT` | `/api/servers/{alias}` | 按别名更新服务器配置 |
+| `DELETE` | `/api/servers/{alias}` | 按别名删除服务器配置 |
+| `GET` | `/api/workspaces` | 列出所有已记录的工作区路径 |
+| `POST` | `/api/workspaces/add` | 手动添加工作区路径 |
+| `DELETE` | `/api/workspaces` | 移除工作区路径（请求体：`{"path":"..."}`） |
+| `POST` | `/api/genv/read` | 读取并解析 `.genv` 文件（请求体：`{"path":"..."}`） |
+| `POST` | `/api/genv/write` | 将原始 JSON 写入 `.genv` 文件（请求体：`{"path":"...","raw":"..."}`） |
+| `GET` | `/api/scan` | 扫描 `.genv` 文件（Server-Sent Events 流） |
+| `GET` | `/api/settings` | 获取当前扫描设置 |
+| `PUT` | `/api/settings` | 更新扫描设置 |
+
+### 扫描 API（SSE）
+
+`GET /api/scan` 会以 Server-Sent Events 的形式推送三种事件：
+
+- `scanning` — `{"dir": "<当前正在进入的目录>"}`
+- `found` — `{"path": "<包含 .genv 的目录>"}`
+- `done` — `{"count": N}`
+
+### 扫描设置
+
+扫描设置控制哪些目录会被跳过，以及从哪些根目录开始扫描：
 
 ```json
-{ "path": "/your/project/path" }
+{
+  "skip_dirs": [".git", "node_modules", "vendor", "dist", "build"],
+  "scan_roots": ["/home/user/projects"]
+}
 ```
+
+- `skip_dirs`：扫描时跳过的目录名。默认使用内置列表（`.git`、`node_modules`、`vendor`、`dist`、`build` 等）。
+- `scan_roots`：扫描的根目录列表。为空时默认使用用户主目录。
+
+设置会持久化保存在全局 `servers.json` 配置文件中。
 
 ## 注意事项
 

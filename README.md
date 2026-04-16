@@ -14,6 +14,10 @@ It supports:
 - `sudo` support through `sudo -S`
 - Environment groups via `gscp run -g <group_name>`
 - Importing remote server profiles via `gscp add -r <json_url>`
+- Local web UI for managing servers, workspaces, and `.genv` files via `gscp serve`
+- Automatic workspace tracking across `init` and `run` invocations
+- File system scanning to discover `.genv` files under configurable roots
+- Configurable scan settings (skip directories, scan roots)
 
 ## Build
 
@@ -39,6 +43,7 @@ gscp run
 gscp run <env_key>
 gscp run -d
 gscp run -g <group_name>
+gscp serve [addr]
 ```
 
 ## Server Management
@@ -209,9 +214,63 @@ If a command starts with `sudo `, `gscp` automatically rewrites it to use the sa
 
 It also requests a TTY for remote command execution so servers that require a TTY for `sudo` can work.
 
-## Notes
+## Workspace Tracking
 
-- Server passwords are currently stored locally in plain text.
+Every time you run `gscp init` or `gscp run`, the current working directory is automatically appended to the global `workspaces` list (deduplicated). This lets the web UI discover all project directories that have ever used `gscp`.
+
+## Web UI (`gscp serve`)
+
+Start a local web server to manage server profiles, workspaces, and `.genv` files through a browser:
+
+```bash
+gscp serve          # listens on :8080
+gscp serve :9090    # custom port
+```
+
+Open `http://localhost:8080` in your browser.
+
+### REST API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/servers` | List all saved server profiles |
+| `POST` | `/api/servers` | Add or update a server profile |
+| `PUT` | `/api/servers/{alias}` | Update a server profile by alias |
+| `DELETE` | `/api/servers/{alias}` | Remove a server profile by alias |
+| `GET` | `/api/workspaces` | List all recorded workspace paths |
+| `POST` | `/api/workspaces/add` | Add a workspace path manually |
+| `DELETE` | `/api/workspaces` | Remove a workspace path (body: `{"path":"..."}`) |
+| `POST` | `/api/genv/read` | Read and parse a `.genv` file (body: `{"path":"..."}`) |
+| `POST` | `/api/genv/write` | Write raw JSON to a `.genv` file (body: `{"path":"...","raw":"..."}`) |
+| `GET` | `/api/scan` | Scan for `.genv` files (Server-Sent Events stream) |
+| `GET` | `/api/settings` | Get current scan settings |
+| `PUT` | `/api/settings` | Update scan settings |
+
+### Scan API (SSE)
+
+`GET /api/scan` streams three event types:
+
+- `scanning` — `{"dir": "<current directory being entered>"}`
+- `found` — `{"path": "<directory containing .genv>"}`
+- `done` — `{"count": N}`
+
+### Scan Settings
+
+Scan settings control which directories are skipped and which roots are searched:
+
+```json
+{
+  "skip_dirs": [".git", "node_modules", "vendor", "dist", "build"],
+  "scan_roots": ["/home/user/projects"]
+}
+```
+
+- `skip_dirs`: directory names to skip during scanning. Defaults to a built-in list (`.git`, `node_modules`, `vendor`, `dist`, `build`, etc.).
+- `scan_roots`: root paths to scan. Defaults to the user home directory if empty.
+
+Settings are persisted in the global `servers.json` config file.
+
+## Notes
 - SSH host key checking currently uses `InsecureIgnoreHostKey`.
 - The TUI log view keeps only recent log lines.
 
