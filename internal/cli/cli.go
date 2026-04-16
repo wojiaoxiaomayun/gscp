@@ -13,6 +13,7 @@ import (
 
 	"gscp/internal/config"
 	"gscp/internal/runconfig"
+	"gscp/internal/serve"
 	"gscp/internal/tui"
 )
 
@@ -33,6 +34,8 @@ func Run(args []string) error {
 		return runRemove(args[1:])
 	case "run":
 		return runExecute(args[1:])
+	case "serve":
+		return runServe(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -158,8 +161,19 @@ func runInit(args []string) error {
 	}
 
 	path, err := runconfig.InitInDir(workingDir, alias)
-	if err != nil {
+	alreadyExisted := errors.Is(err, runconfig.ErrAlreadyExists)
+	if err != nil && !alreadyExisted {
 		return err
+	}
+
+	// Record workspace whether .genv was just created or already existed.
+	if werr := recordWorkspace(workingDir); werr != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not record workspace: %v\n", werr)
+	}
+
+	if alreadyExisted {
+		fmt.Fprintf(os.Stdout, "%s already exists, workspace recorded\n", runconfig.FileName)
+		return nil
 	}
 
 	if alias != "" {
@@ -239,6 +253,11 @@ func runExecute(args []string) error {
 	}
 	if len(cfg.Targets) == 0 {
 		return errors.New(".genv 中未配置任何环境")
+	}
+
+	// Record this workspace in the global config so the web UI can manage it.
+	if err := recordWorkspace(workingDir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not record workspace: %v\n", err)
 	}
 
 	store, err := config.Load()
@@ -345,6 +364,27 @@ func selectDefaultEnv(targets map[string]runconfig.Target) (string, error) {
 	return defaultEnv, nil
 }
 
+func runServe(args []string) error {
+	addr := ":8080"
+	if len(args) == 1 {
+		addr = args[0]
+	} else if len(args) > 1 {
+		return errors.New("usage: gscp serve [addr]  (e.g. gscp serve :9090)")
+	}
+	return serve.Run(addr)
+}
+
+// recordWorkspace adds dir to the global workspace list so the web UI can
+// discover and manage .genv files across different directories.
+func recordWorkspace(dir string) error {
+	store, err := config.Load()
+	if err != nil {
+		return err
+	}
+	store.AddWorkspace(dir)
+	return store.Save()
+}
+
 func printUsage() {
 	fmt.Fprintln(os.Stdout, `gscp manages remote server profiles for file uploads.
 
@@ -358,11 +398,14 @@ Usage:
   gscp run <env_key>
   gscp run -d
   gscp run -g <group_name>
+  gscp serve [addr]
 
 The run command reads .genv from the current working directory.
 Without arguments it opens an interactive environment picker.
 With -d it runs the env marked by is_default=true.
 With -g it runs all envs in the named group sequentially.
+The serve command starts a local web UI for managing server configs.
+  addr defaults to :8080 (e.g. gscp serve :9090 to use a different port).
 If host does not include a port, SSH defaults to 22.
 Example .genv:
   {

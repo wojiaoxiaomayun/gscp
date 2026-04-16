@@ -210,6 +210,18 @@ gscp run -g prod-all
 
 同时它会为远程命令申请一个 TTY，所以对 “必须在 TTY 中执行 sudo” 的服务器也更友好。
 
+## 工作区记录
+
+每次执行 `gscp init` 或 `gscp run` 时，`gscp` 会自动把当前目录追加到全局配置的 `workspaces` 列表中（去重）。
+
+这样 `gscp serve` 的网页端就能通过 `GET /api/workspaces` 获取所有曾经使用过的项目目录，方便后续在 Web UI 中统一管理各目录下的 `.genv` 文件。
+
+如果需要从列表中移除某个目录，可以调用 `DELETE /api/workspaces`，请求体为：
+
+```json
+{ "path": "/your/project/path" }
+```
+
 ## 注意事项
 
 - 服务器密码目前仍然是明文保存在本地配置里

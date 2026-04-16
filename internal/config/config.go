@@ -25,7 +25,8 @@ type Server struct {
 }
 
 type Store struct {
-	Servers map[string]Server `json:"servers"`
+	Servers    map[string]Server `json:"servers"`
+	Workspaces []string          `json:"workspaces,omitempty"`
 }
 
 func Load() (*Store, error) {
@@ -99,6 +100,20 @@ func (s *Store) Upsert(server Server) {
 	}
 	server = normalizeServer(server)
 	s.Servers[server.Alias] = server
+}
+
+// AddWorkspace appends dir to the workspace list if it is not already present.
+func (s *Store) AddWorkspace(dir string) {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return
+	}
+	for _, w := range s.Workspaces {
+		if w == dir {
+			return
+		}
+	}
+	s.Workspaces = append(s.Workspaces, dir)
 }
 
 func (s *Store) Merge(other *Store) {

@@ -2,6 +2,7 @@ package runconfig
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,9 @@ import (
 )
 
 const FileName = ".genv"
+
+// ErrAlreadyExists is returned by InitInDir when .genv already exists.
+var ErrAlreadyExists = errors.New(".genv already exists")
 
 const defaultTemplate = `{
   "groups": {
@@ -86,7 +90,7 @@ func LoadFromDir(dir string) (map[string]Target, string, error) {
 func InitInDir(dir string, alias string) (string, error) {
 	path := filepath.Join(dir, FileName)
 	if _, err := os.Stat(path); err == nil {
-		return "", fmt.Errorf("%s already exists", FileName)
+		return "", ErrAlreadyExists
 	} else if !os.IsNotExist(err) {
 		return "", fmt.Errorf("check %s: %w", FileName, err)
 	}
