@@ -1,0 +1,22 @@
+{
+  "groups":{
+    "prod":[
+      "all",
+      "dev"
+    ]
+  },
+  "all": {
+    "active_alias": "n42",
+    "is_default": false,
+    "local_path": "D:\\vworkspace\\bkypro\\dist",
+    "to_path": "/home/hky/test/bkypro",
+    "commands": ["sudo sh /home/hky/hkytools/restart.sh"]
+  },
+  "dev": {
+    "active_alias": "n42",
+    "is_default": true,
+    "local_path": "D:\\vworkspace\\bkypro\\dist",
+    "to_path": "/home/hky/test/bkypro-1",
+    "commands": []
+  }
+}

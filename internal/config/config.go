@@ -24,6 +24,7 @@ type Server struct {
 	Password string `json:"password"`
 }
 
+<<<<<<< HEAD
 // ScanSettings holds configuration for the local .genv file scanner.
 type ScanSettings struct {
 	// SkipDirs is a list of directory names to skip during scanning.
@@ -50,6 +51,11 @@ type Store struct {
 	Servers      map[string]Server `json:"servers"`
 	Workspaces   []string          `json:"workspaces,omitempty"`
 	ScanSettings *ScanSettings     `json:"scan_settings,omitempty"`
+=======
+type Store struct {
+	Servers    map[string]Server `json:"servers"`
+	Workspaces []string          `json:"workspaces,omitempty"`
+>>>>>>> a6686846fbbc609b642a6d767a29340b61ae1934
 }
 
 func Load() (*Store, error) {
@@ -173,6 +179,7 @@ func (s *Store) List() []Server {
 	return servers
 }
 
+<<<<<<< HEAD
 // GetScanSettings returns the effective scan settings, merging defaults with stored config.
 func (s *Store) GetScanSettings() ScanSettings {
 	defaults := DefaultSkipDirs()
@@ -186,6 +193,8 @@ func (s *Store) GetScanSettings() ScanSettings {
 	return ss
 }
 
+=======
+>>>>>>> a6686846fbbc609b642a6d767a29340b61ae1934
 func Path() (string, error) {
 	return configFilePath()
 }

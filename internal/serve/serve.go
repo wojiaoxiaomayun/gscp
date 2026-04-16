@@ -22,11 +22,16 @@ func Run(addr string) error {
 	mux.HandleFunc("/api/servers", handleServers)
 	mux.HandleFunc("/api/servers/", handleServerByAlias)
 	mux.HandleFunc("/api/workspaces", handleWorkspaces)
+<<<<<<< HEAD
 	mux.HandleFunc("/api/workspaces/add", handleWorkspaceAdd)
 	mux.HandleFunc("/api/genv/read", handleGenvRead)
 	mux.HandleFunc("/api/genv/write", handleGenvWrite)
 	mux.HandleFunc("/api/scan", handleScan)
 	mux.HandleFunc("/api/settings", handleSettings)
+=======
+	mux.HandleFunc("/api/genv/read", handleGenvRead)
+	mux.HandleFunc("/api/genv/write", handleGenvWrite)
+>>>>>>> a6686846fbbc609b642a6d767a29340b61ae1934
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -40,7 +45,11 @@ func Run(addr string) error {
 	srv := &http.Server{
 		Handler:      mux,
 		ReadTimeout:  15 * time.Second,
+<<<<<<< HEAD
 		WriteTimeout: 60 * time.Second,
+=======
+		WriteTimeout: 15 * time.Second,
+>>>>>>> a6686846fbbc609b642a6d767a29340b61ae1934
 	}
 
 	return srv.Serve(ln)
@@ -53,11 +62,16 @@ func RunWithContext(ctx context.Context, addr string) error {
 	mux.HandleFunc("/api/servers", handleServers)
 	mux.HandleFunc("/api/servers/", handleServerByAlias)
 	mux.HandleFunc("/api/workspaces", handleWorkspaces)
+<<<<<<< HEAD
 	mux.HandleFunc("/api/workspaces/add", handleWorkspaceAdd)
 	mux.HandleFunc("/api/genv/read", handleGenvRead)
 	mux.HandleFunc("/api/genv/write", handleGenvWrite)
 	mux.HandleFunc("/api/scan", handleScan)
 	mux.HandleFunc("/api/settings", handleSettings)
+=======
+	mux.HandleFunc("/api/genv/read", handleGenvRead)
+	mux.HandleFunc("/api/genv/write", handleGenvWrite)
+>>>>>>> a6686846fbbc609b642a6d767a29340b61ae1934
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -71,7 +85,11 @@ func RunWithContext(ctx context.Context, addr string) error {
 	srv := &http.Server{
 		Handler:      mux,
 		ReadTimeout:  15 * time.Second,
+<<<<<<< HEAD
 		WriteTimeout: 60 * time.Second,
+=======
+		WriteTimeout: 15 * time.Second,
+>>>>>>> a6686846fbbc609b642a6d767a29340b61ae1934
 	}
 
 	go func() {
@@ -333,6 +351,7 @@ func handleGenvWrite(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+<<<<<<< HEAD
 
 // handleWorkspaceAdd handles POST /api/workspaces/add
 // Body: {"path": "/abs/path/to/dir"}
@@ -508,3 +527,5 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
+=======
+>>>>>>> a6686846fbbc609b642a6d767a29340b61ae1934
