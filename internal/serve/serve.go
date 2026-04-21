@@ -7,7 +7,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gscp/internal/config"
@@ -135,6 +137,18 @@ func handleServers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// getGitBranch returns the current git branch name for the given directory.
+// Returns empty string if git is not available or the directory is not a git repository.
+func getGitBranch(dir string) string {
+	cmd := exec.Command("git", "-C", dir, "branch", "--show-current")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	branch := strings.TrimSpace(string(output))
+	return branch
+}
+
 // handleServerByAlias handles PUT /api/servers/{alias} and DELETE /api/servers/{alias}
 func handleServerByAlias(w http.ResponseWriter, r *http.Request) {
 	alias := r.URL.Path[len("/api/servers/"):]
@@ -213,7 +227,21 @@ func handleWorkspaces(w http.ResponseWriter, r *http.Request) {
 		if workspaces == nil {
 			workspaces = []string{}
 		}
-		jsonOK(w, workspaces)
+
+		type WorkspaceInfo struct {
+			Path      string `json:"path"`
+			GitBranch string `json:"git_branch,omitempty"`
+		}
+
+		result := make([]WorkspaceInfo, len(workspaces))
+		for i, path := range workspaces {
+			result[i] = WorkspaceInfo{
+				Path:      path,
+				GitBranch: getGitBranch(path),
+			}
+		}
+
+		jsonOK(w, result)
 
 	case http.MethodDelete:
 		var body struct {
