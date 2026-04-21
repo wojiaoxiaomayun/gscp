@@ -1,4 +1,4 @@
-﻿# gscp
+# gscp
 
 [中文说明](./README_ZH.md)
 
@@ -164,9 +164,38 @@ Fields:
 - `groups`: optional named environment lists used by `gscp run -g <group_name>`
 - `active_alias`: server alias previously added with `gscp add`
 - `is_default`: default environment used by `gscp run -d`
-- `local_path`: local file or directory to upload
+- `local_path`: local file or directory to upload, supports two formats:
+  - String: single file or directory path, e.g. `"./dist"`
+  - String array: multiple files or directories, e.g. `["./dist", "./config.json", "./scripts"]`
 - `to_path`: remote target directory
 - `commands`: commands to run after upload
+
+### Multiple Paths Upload Example
+
+If you need to upload multiple files or directories at once, you can set `local_path` as an array:
+
+```json
+{
+  "dev": {
+    "active_alias": "dev-server",
+    "is_default": true,
+    "local_path": [
+      "./dist",
+      "./index.html",
+      "./config/production.json",
+      "./scripts/deploy.sh"
+    ],
+    "to_path": "/var/www/app",
+    "commands": [
+      "cd /var/www/app",
+      "chmod +x scripts/deploy.sh",
+      "./scripts/deploy.sh"
+    ]
+  }
+}
+```
+
+With this configuration, `gscp run` will upload the `dist` directory, `index.html` file, `config/production.json` file, and `scripts/deploy.sh` file to the remote server's `/var/www/app` directory.
 
 ## Run Deployments
 

@@ -19,10 +19,10 @@ import (
 )
 
 type Plan struct {
-	EnvKey    string
-	LocalPath string
-	ToPath    string
-	Commands  []string
+	EnvKey     string
+	LocalPaths []string
+	ToPath     string
+	Commands   []string
 }
 
 type EventType string
@@ -84,25 +84,32 @@ type commandStreamer struct {
 }
 
 func (r Runner) Run(server config.Server, workingDir string, plan Plan) error {
-	if strings.TrimSpace(plan.LocalPath) == "" {
+	if len(plan.LocalPaths) == 0 {
 		return fmt.Errorf("env %q missing local_path", plan.EnvKey)
 	}
 	if strings.TrimSpace(plan.ToPath) == "" {
 		return fmt.Errorf("env %q missing to_path", plan.EnvKey)
 	}
 
-	localPath := plan.LocalPath
-	if !filepath.IsAbs(localPath) {
-		localPath = filepath.Join(workingDir, localPath)
-	}
-	info, err := os.Stat(localPath)
-	if err != nil {
-		return fmt.Errorf("stat local_path: %w", err)
-	}
+	var allItems []uploadItem
+	for _, localPath := range plan.LocalPaths {
+		if strings.TrimSpace(localPath) == "" {
+			continue
+		}
 
-	items, err := buildUploadPlan(localPath, plan.ToPath, info)
-	if err != nil {
-		return err
+		if !filepath.IsAbs(localPath) {
+			localPath = filepath.Join(workingDir, localPath)
+		}
+		info, err := os.Stat(localPath)
+		if err != nil {
+			return fmt.Errorf("stat local_path %q: %w", localPath, err)
+		}
+
+		items, err := buildUploadPlan(localPath, plan.ToPath, info)
+		if err != nil {
+			return err
+		}
+		allItems = append(allItems, items...)
 	}
 
 	r.emit(Event{Type: EventStatus, Message: fmt.Sprintf("connecting to %s", server.Host)})
@@ -119,12 +126,12 @@ func (r Runner) Run(server config.Server, workingDir string, plan Plan) error {
 	}
 	defer sftpClient.Close()
 
-	if len(items) == 0 {
+	if len(allItems) == 0 {
 		r.emit(Event{Type: EventStatus, Message: "no files found to upload"})
 	} else {
 		r.emit(Event{Type: EventStatus, Message: fmt.Sprintf("uploading to %s", plan.ToPath)})
-		progress := newProgressReporter(r.Notify, totalSize(items), len(items))
-		if err := uploadItems(sftpClient, items, progress); err != nil {
+		progress := newProgressReporter(r.Notify, totalSize(allItems), len(allItems))
+		if err := uploadItems(sftpClient, allItems, progress); err != nil {
 			return err
 		}
 		r.emit(Event{Type: EventUploadDone, Message: "upload complete"})

@@ -192,7 +192,7 @@ func (m *runModel) startRunCmd() tea.Cmd {
 	ch := m.events
 	go func() {
 		runner := deploy.Runner{Notify: func(event deploy.Event) { ch <- runEventMsg{event: event} }}
-		err := runner.Run(server, workingDir, deploy.Plan{EnvKey: envKey, LocalPath: target.LocalPath, ToPath: target.ToPath, Commands: target.Commands})
+		err := runner.Run(server, workingDir, deploy.Plan{EnvKey: envKey, LocalPaths: target.LocalPaths, ToPath: target.ToPath, Commands: target.Commands})
 		ch <- runFinishedMsg{err: err}
 		close(ch)
 	}()
@@ -261,7 +261,11 @@ func (m runModel) selectView() string {
 	for i, envKey := range m.envKeys {
 		target := m.targets[envKey]
 		server := m.servers[target.ActiveAlias]
-		line := fmt.Sprintf("%s  %s -> %s  %s", envKey, target.LocalPath, target.ToPath, server.Host)
+		localPathDisplay := strings.Join(target.LocalPaths, ", ")
+		if len(localPathDisplay) > 50 {
+			localPathDisplay = localPathDisplay[:47] + "..."
+		}
+		line := fmt.Sprintf("%s  %s -> %s  %s", envKey, localPathDisplay, target.ToPath, server.Host)
 		if i == m.selected {
 			b.WriteString(selectedEnvStyle.Render("> " + line))
 		} else {

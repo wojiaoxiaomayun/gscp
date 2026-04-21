@@ -1645,6 +1645,8 @@ function renderVisual() {
     const isDefault = t.is_default || t.isDefault;
     const alias = t.active_alias || t.activeAlias || '';
     const localPath = t.local_path || t.localPath || '';
+    // Support both string and array for local_path
+    const localPathDisplay = Array.isArray(localPath) ? localPath.join('\n') : localPath;
     const toPath = t.to_path || t.toPath || '';
     const commands = (t.commands || []).join('\n');
 
@@ -1678,8 +1680,8 @@ function renderVisual() {
                 </select>
               </div>
               <div class="field">
-                <label>LOCAL_PATH</label>
-                <input id="tv-local-${esc(key)}" value="${esc(localPath)}" oninput="markDirty()" placeholder="./dist" />
+                <label>LOCAL_PATH（支持多个路径，每行一个）</label>
+                <textarea id="tv-local-${esc(key)}" oninput="markDirty()" placeholder="./dist&#10;./index.html&#10;./config/production.json" style="min-height:80px">${esc(localPathDisplay)}</textarea>
               </div>
               <div class="field">
                 <label>TO_PATH</label>
@@ -1799,10 +1801,16 @@ function collectFromVisual() {
     const toEl = document.getElementById('tv-to-' + k);
     const cmdsEl = document.getElementById('tv-cmds-' + k);
     if (!aliasEl) return;
+    
+    // Parse local_path: split by newlines and filter empty lines
+    const localPaths = localEl.value.split('\n').map(s => s.trim()).filter(Boolean);
+    // If single path, store as string; if multiple, store as array
+    const localPathValue = localPaths.length === 1 ? localPaths[0] : localPaths;
+    
     genvData.targets[key] = {
       active_alias: aliasEl.value,
       is_default: defaultEl.value === 'true',
-      local_path: localEl.value.trim(),
+      local_path: localPathValue,
       to_path: toEl.value.trim(),
       commands: cmdsEl.value.split('\n').map(s => s.trim()).filter(Boolean)
     };
@@ -1816,10 +1824,14 @@ function buildRaw() {
     out.groups = genvData.groups;
   }
   Object.entries(genvData.targets).forEach(([key, t]) => {
+    const localPath = t.local_path || t.localPath || '';
+    // Normalize: if array, keep as array; if string, keep as string
+    const localPathValue = Array.isArray(localPath) ? localPath : localPath;
+    
     out[key] = {
       active_alias: t.active_alias || t.activeAlias || '',
       is_default: !!(t.is_default || t.isDefault),
-      local_path: t.local_path || t.localPath || '',
+      local_path: localPathValue,
       to_path: t.to_path || t.toPath || '',
       commands: t.commands || []
     };

@@ -34,9 +34,61 @@ const defaultTemplate = `{
 type Target struct {
 	ActiveAlias string   `json:"active_alias"`
 	IsDefault   bool     `json:"is_default"`
-	LocalPath   string   `json:"local_path"`
+	LocalPaths  []string `json:"-"`
 	ToPath      string   `json:"to_path"`
 	Commands    []string `json:"commands"`
+}
+
+func (t *Target) UnmarshalJSON(data []byte) error {
+	type Alias Target
+	aux := &struct {
+		LocalPath json.RawMessage `json:"local_path"`
+		*Alias
+	}{
+		Alias: (*Alias)(t),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	if len(aux.LocalPath) == 0 {
+		return nil
+	}
+
+	var singlePath string
+	if err := json.Unmarshal(aux.LocalPath, &singlePath); err == nil {
+		t.LocalPaths = []string{singlePath}
+		return nil
+	}
+
+	var multiPaths []string
+	if err := json.Unmarshal(aux.LocalPath, &multiPaths); err == nil {
+		t.LocalPaths = multiPaths
+		return nil
+	}
+
+	return fmt.Errorf("local_path must be a string or array of strings")
+}
+
+func (t Target) MarshalJSON() ([]byte, error) {
+	type Alias Target
+	if len(t.LocalPaths) == 1 {
+		return json.Marshal(&struct {
+			LocalPath string `json:"local_path"`
+			*Alias
+		}{
+			LocalPath: t.LocalPaths[0],
+			Alias:     (*Alias)(&t),
+		})
+	}
+	return json.Marshal(&struct {
+		LocalPath []string `json:"local_path"`
+		*Alias
+	}{
+		LocalPath: t.LocalPaths,
+		Alias:     (*Alias)(&t),
+	})
 }
 
 type ConfigFile struct {

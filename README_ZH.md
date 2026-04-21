@@ -1,4 +1,4 @@
-﻿# gscp
+# gscp
 
 [English README](./README.md)
 
@@ -164,9 +164,38 @@ gscp init
 - `groups`：可选，定义环境组，供 `gscp run -g <group_name>` 使用
 - `active_alias`：服务器别名，对应你之前通过 `gscp add` 保存的服务器
 - `is_default`：默认环境，供 `gscp run -d` 使用
-- `local_path`：本地要上传的文件或目录
+- `local_path`：本地要上传的文件或目录，支持两种格式：
+  - 字符串：单个文件或目录路径，如 `"./dist"`
+  - 字符串数组：多个文件或目录路径，如 `["./dist", "./config.json", "./scripts"]`
 - `to_path`：远程目标目录
 - `commands`：上传完成后要执行的命令列表
+
+### 多路径上传示例
+
+如果你需要同时上传多个文件或文件夹，可以将 `local_path` 设置为数组：
+
+```json
+{
+  "dev": {
+    "active_alias": "dev-server",
+    "is_default": true,
+    "local_path": [
+      "./dist",
+      "./index.html",
+      "./config/production.json",
+      "./scripts/deploy.sh"
+    ],
+    "to_path": "/var/www/app",
+    "commands": [
+      "cd /var/www/app",
+      "chmod +x scripts/deploy.sh",
+      "./scripts/deploy.sh"
+    ]
+  }
+}
+```
+
+这样配置后，`gscp run` 会将 `dist` 目录、`index.html` 文件、`config/production.json` 文件和 `scripts/deploy.sh` 文件都上传到远程服务器的 `/var/www/app` 目录下。
 
 ## 运行部署
 
