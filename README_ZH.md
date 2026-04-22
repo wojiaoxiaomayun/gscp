@@ -18,6 +18,7 @@
 - 执行 `init` 和 `run` 时自动记录工作区路径
 - 扫描文件系统，发现可配置根目录下的所有 `.genv` 文件
 - 可配置扫描设置（跳过目录、扫描根目录）
+- 上传对模式：通过 `upload_pairs` 将多个本地路径分别映射到不同的远程目录
 
 ## 构建
 
@@ -196,6 +197,35 @@ gscp init
 ```
 
 这样配置后，`gscp run` 会将 `dist` 目录、`index.html` 文件、`config/production.json` 文件和 `scripts/deploy.sh` 文件都上传到远程服务器的 `/var/www/app` 目录下。
+
+### 上传对模式（Upload Pairs）
+
+当你需要将不同的本地路径上传到**不同的**远程目录时，使用 `upload_pairs`。每个条目有独立的 `from`（本地）和 `to`（远程）映射。
+
+当 `upload_pairs` 和 `local_path` + `to_path` 同时存在时，`upload_pairs` 优先生效。
+
+```json
+{
+  "prod": {
+    "active_alias": "prod-server",
+    "upload_pairs": [
+      { "from": "./frontend/dist", "to": "/var/www/frontend" },
+      { "from": "./backend/bin",   "to": "/opt/app/bin" }
+    ],
+    "commands": [
+      "sudo systemctl restart app"
+    ]
+  }
+}
+```
+
+字段说明：
+
+- `upload_pairs`：`{ "from": "<本地路径>", "to": "<远程路径>" }` 条目列表
+  - `from`：本地文件或目录路径（相对于 `.genv` 所在目录，或绝对路径）
+  - `to`：该条目对应的远程目标目录
+
+每个上传对按顺序依次执行，并分别展示上传进度。
 
 ## 运行部署
 

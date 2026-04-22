@@ -190,9 +190,22 @@ func (m *runModel) startRunCmd() tea.Cmd {
 	server := m.servers[target.ActiveAlias]
 	workingDir := m.workingDir
 	ch := m.events
+
+	// Convert runconfig.UploadPair to deploy.UploadPair.
+	var pairs []deploy.UploadPair
+	for _, p := range target.UploadPairs {
+		pairs = append(pairs, deploy.UploadPair{From: p.From, To: p.To})
+	}
+
 	go func() {
 		runner := deploy.Runner{Notify: func(event deploy.Event) { ch <- runEventMsg{event: event} }}
-		err := runner.Run(server, workingDir, deploy.Plan{EnvKey: envKey, LocalPaths: target.LocalPaths, ToPath: target.ToPath, Commands: target.Commands})
+		err := runner.Run(server, workingDir, deploy.Plan{
+			EnvKey:      envKey,
+			LocalPaths:  target.LocalPaths,
+			ToPath:      target.ToPath,
+			UploadPairs: pairs,
+			Commands:    target.Commands,
+		})
 		ch <- runFinishedMsg{err: err}
 		close(ch)
 	}()
@@ -261,11 +274,23 @@ func (m runModel) selectView() string {
 	for i, envKey := range m.envKeys {
 		target := m.targets[envKey]
 		server := m.servers[target.ActiveAlias]
-		localPathDisplay := strings.Join(target.LocalPaths, ", ")
-		if len(localPathDisplay) > 50 {
-			localPathDisplay = localPathDisplay[:47] + "..."
+
+		var pathDisplay string
+		if len(target.UploadPairs) > 0 {
+			parts := make([]string, 0, len(target.UploadPairs))
+			for _, p := range target.UploadPairs {
+				parts = append(parts, p.From+" -> "+p.To)
+			}
+			pathDisplay = strings.Join(parts, ", ")
+		} else {
+			localPathDisplay := strings.Join(target.LocalPaths, ", ")
+			pathDisplay = localPathDisplay + " -> " + target.ToPath
 		}
-		line := fmt.Sprintf("%s  %s -> %s  %s", envKey, localPathDisplay, target.ToPath, server.Host)
+		if len(pathDisplay) > 60 {
+			pathDisplay = pathDisplay[:57] + "..."
+		}
+
+		line := fmt.Sprintf("%s  %s  %s", envKey, pathDisplay, server.Host)
 		if i == m.selected {
 			b.WriteString(selectedEnvStyle.Render("> " + line))
 		} else {
@@ -292,7 +317,11 @@ func (m runModel) progressView() string {
 	b.WriteString("   ")
 	b.WriteString(renderFact("Server", fmt.Sprintf("%s (%s)", target.ActiveAlias, server.Host)))
 	b.WriteString("   ")
-	b.WriteString(renderFact("Target", target.ToPath))
+	if len(target.UploadPairs) > 0 {
+		b.WriteString(renderFact("Pairs", fmt.Sprintf("%d path(s)", len(target.UploadPairs))))
+	} else {
+		b.WriteString(renderFact("Target", target.ToPath))
+	}
 	b.WriteString("\n")
 	if m.currentCommand != "" {
 		b.WriteString("\n")

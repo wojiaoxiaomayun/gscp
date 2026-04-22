@@ -407,7 +407,7 @@ With -g it runs all envs in the named group sequentially.
 The serve command starts a local web UI for managing server configs.
   addr defaults to :8080 (e.g. gscp serve :9090 to use a different port).
 If host does not include a port, SSH defaults to 22.
-Example .genv:
+Example .genv (single mode):
   {
     "groups": {
       "default": ["dev"],
@@ -419,6 +419,18 @@ Example .genv:
       "local_path": "./dist",
       "to_path": "/var/www/dev",
       "commands": ["cd /var/www/dev", "pm2 restart dev-app"]
+    }
+  }
+
+Example .genv (pairs mode – multiple folders to different remote paths):
+  {
+    "prod": {
+      "active_alias": "prod-server",
+      "upload_pairs": [
+        { "from": "./frontend/dist", "to": "/var/www/frontend" },
+        { "from": "./backend/bin",   "to": "/opt/app/bin" }
+      ],
+      "commands": ["sudo systemctl restart app"]
     }
   }`)
 }

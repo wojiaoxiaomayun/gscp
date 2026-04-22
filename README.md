@@ -18,6 +18,7 @@ It supports:
 - Automatic workspace tracking across `init` and `run` invocations
 - File system scanning to discover `.genv` files under configurable roots
 - Configurable scan settings (skip directories, scan roots)
+- Upload pairs mode: map multiple local paths to different remote directories via `upload_pairs`
 
 ## Build
 
@@ -196,6 +197,35 @@ If you need to upload multiple files or directories at once, you can set `local_
 ```
 
 With this configuration, `gscp run` will upload the `dist` directory, `index.html` file, `config/production.json` file, and `scripts/deploy.sh` file to the remote server's `/var/www/app` directory.
+
+### Upload Pairs Mode
+
+Use `upload_pairs` when you need to upload different local paths to **different** remote directories. Each pair has its own `from` (local) and `to` (remote) mapping.
+
+`upload_pairs` takes precedence over `local_path` + `to_path` when both are present.
+
+```json
+{
+  "prod": {
+    "active_alias": "prod-server",
+    "upload_pairs": [
+      { "from": "./frontend/dist", "to": "/var/www/frontend" },
+      { "from": "./backend/bin",   "to": "/opt/app/bin" }
+    ],
+    "commands": [
+      "sudo systemctl restart app"
+    ]
+  }
+}
+```
+
+Fields:
+
+- `upload_pairs`: list of `{ "from": "<local path>", "to": "<remote path>" }` entries
+  - `from`: local file or directory path (relative to the `.genv` directory or absolute)
+  - `to`: remote target directory for this specific pair
+
+Each pair is uploaded sequentially and progress is reported per pair.
 
 ## Run Deployments
 

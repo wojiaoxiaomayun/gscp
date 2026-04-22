@@ -18,11 +18,18 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// UploadPair maps a single local path to a single remote destination.
+type UploadPair struct {
+	From string
+	To   string
+}
+
 type Plan struct {
-	EnvKey     string
-	LocalPaths []string
-	ToPath     string
-	Commands   []string
+	EnvKey      string
+	LocalPaths  []string
+	ToPath      string
+	UploadPairs []UploadPair // takes precedence over LocalPaths+ToPath when non-empty
+	Commands    []string
 }
 
 type EventType string
@@ -84,32 +91,59 @@ type commandStreamer struct {
 }
 
 func (r Runner) Run(server config.Server, workingDir string, plan Plan) error {
-	if len(plan.LocalPaths) == 0 {
-		return fmt.Errorf("env %q missing local_path", plan.EnvKey)
-	}
-	if strings.TrimSpace(plan.ToPath) == "" {
-		return fmt.Errorf("env %q missing to_path", plan.EnvKey)
-	}
-
+	// Build the full list of upload items depending on the mode.
 	var allItems []uploadItem
-	for _, localPath := range plan.LocalPaths {
-		if strings.TrimSpace(localPath) == "" {
-			continue
+	var pairItemCounts []int // only populated in pairs mode
+
+	if len(plan.UploadPairs) > 0 {
+		// Pairs mode: each pair has its own local→remote mapping.
+		// Track how many items belong to each pair for per-pair progress reporting.
+		pairItemCounts = make([]int, 0, len(plan.UploadPairs))
+		for _, pair := range plan.UploadPairs {
+			if strings.TrimSpace(pair.From) == "" || strings.TrimSpace(pair.To) == "" {
+				return fmt.Errorf("env %q: upload_pairs entry has empty from or to", plan.EnvKey)
+			}
+			localPath := pair.From
+			if !filepath.IsAbs(localPath) {
+				localPath = filepath.Join(workingDir, localPath)
+			}
+			info, err := os.Stat(localPath)
+			if err != nil {
+				return fmt.Errorf("stat upload_pairs from %q: %w", pair.From, err)
+			}
+			items, err := buildUploadPlan(localPath, pair.To, info)
+			if err != nil {
+				return err
+			}
+			pairItemCounts = append(pairItemCounts, len(items))
+			allItems = append(allItems, items...)
+		}
+	} else {
+		// Single / multi-path mode (legacy): all paths go to the same to_path.
+		if len(plan.LocalPaths) == 0 {
+			return fmt.Errorf("env %q missing local_path", plan.EnvKey)
+		}
+		if strings.TrimSpace(plan.ToPath) == "" {
+			return fmt.Errorf("env %q missing to_path", plan.EnvKey)
 		}
 
-		if !filepath.IsAbs(localPath) {
-			localPath = filepath.Join(workingDir, localPath)
+		for _, localPath := range plan.LocalPaths {
+			if strings.TrimSpace(localPath) == "" {
+				continue
+			}
+			if !filepath.IsAbs(localPath) {
+				localPath = filepath.Join(workingDir, localPath)
+			}
+			info, err := os.Stat(localPath)
+			if err != nil {
+				return fmt.Errorf("stat local_path %q: %w", localPath, err)
+			}
+			items, err := buildUploadPlan(localPath, plan.ToPath, info)
+			if err != nil {
+				return err
+			}
+			allItems = append(allItems, items...)
 		}
-		info, err := os.Stat(localPath)
-		if err != nil {
-			return fmt.Errorf("stat local_path %q: %w", localPath, err)
-		}
-
-		items, err := buildUploadPlan(localPath, plan.ToPath, info)
-		if err != nil {
-			return err
-		}
-		allItems = append(allItems, items...)
 	}
 
 	r.emit(Event{Type: EventStatus, Message: fmt.Sprintf("connecting to %s", server.Host)})
@@ -128,6 +162,27 @@ func (r Runner) Run(server config.Server, workingDir string, plan Plan) error {
 
 	if len(allItems) == 0 {
 		r.emit(Event{Type: EventStatus, Message: "no files found to upload"})
+	} else if len(pairItemCounts) > 0 {
+		// Pairs mode: report per-pair progress so the user can see each one finish.
+		r.emit(Event{Type: EventStatus, Message: fmt.Sprintf("uploading %d pair(s)", len(plan.UploadPairs))})
+
+		globalProgress := newProgressReporter(r.Notify, totalSize(allItems), len(allItems))
+		cursor := 0
+		fileOffset := 0
+		for i, pair := range plan.UploadPairs {
+			count := pairItemCounts[i]
+			pairItems := allItems[cursor : cursor+count]
+			cursor += count
+			isLast := i == len(plan.UploadPairs)-1
+
+			r.emit(Event{Type: EventStatus, Message: fmt.Sprintf("[%d/%d] uploading %s → %s", i+1, len(plan.UploadPairs), pair.From, pair.To)})
+			if err := uploadItemsWithOffset(sftpClient, pairItems, globalProgress, fileOffset, isLast); err != nil {
+				return err
+			}
+			fileOffset += count
+			r.emit(Event{Type: EventStatus, Message: fmt.Sprintf("[%d/%d] done %s → %s", i+1, len(plan.UploadPairs), pair.From, pair.To)})
+		}
+		r.emit(Event{Type: EventUploadDone, Message: "upload complete"})
 	} else {
 		r.emit(Event{Type: EventStatus, Message: fmt.Sprintf("uploading to %s", plan.ToPath)})
 		progress := newProgressReporter(r.Notify, totalSize(allItems), len(allItems))
@@ -219,15 +274,24 @@ func buildUploadPlan(localPath, remoteBase string, info fs.FileInfo) ([]uploadIt
 }
 
 func uploadItems(client *sftp.Client, items []uploadItem, progress *progressReporter) error {
-	for index, item := range items {
+	return uploadItemsWithOffset(client, items, progress, 0, true)
+}
+
+// uploadItemsWithOffset uploads items using a pre-existing progress reporter.
+// indexOffset shifts the displayed file index (for multi-pair mode).
+// finishOnDone controls whether progress.finish() is called after the last file.
+func uploadItemsWithOffset(client *sftp.Client, items []uploadItem, progress *progressReporter, indexOffset int, finishOnDone bool) error {
+	for i, item := range items {
 		if err := client.MkdirAll(path.Dir(item.RemotePath)); err != nil {
 			return fmt.Errorf("create remote dir %s: %w", path.Dir(item.RemotePath), err)
 		}
-		if err := uploadFile(client, item, index+1, progress); err != nil {
+		if err := uploadFile(client, item, indexOffset+i+1, progress); err != nil {
 			return err
 		}
 	}
-	progress.finish()
+	if finishOnDone {
+		progress.finish()
+	}
 	return nil
 }
 

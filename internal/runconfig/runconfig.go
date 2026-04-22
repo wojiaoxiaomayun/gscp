@@ -31,12 +31,30 @@ const defaultTemplate = `{
 }
 `
 
+// UploadPair maps a single local path to a single remote path.
+type UploadPair struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// Target represents a single deployment environment in .genv.
+//
+// Upload mode is determined by which fields are present:
+//
+//  1. Pairs mode  – set upload_pairs with one or more {from, to} entries.
+//     Each pair is uploaded independently to its own remote directory.
+//
+//  2. Single/multi mode (legacy) – set local_path (string or array) together
+//     with to_path.  All local paths are uploaded into the same remote dir.
+//
+// upload_pairs takes precedence when both are present.
 type Target struct {
-	ActiveAlias string   `json:"active_alias"`
-	IsDefault   bool     `json:"is_default"`
-	LocalPaths  []string `json:"-"`
-	ToPath      string   `json:"to_path"`
-	Commands    []string `json:"commands"`
+	ActiveAlias string       `json:"active_alias"`
+	IsDefault   bool         `json:"is_default"`
+	LocalPaths  []string     `json:"-"`
+	ToPath      string       `json:"to_path,omitempty"`
+	UploadPairs []UploadPair `json:"upload_pairs,omitempty"`
+	Commands    []string     `json:"commands"`
 }
 
 func (t *Target) UnmarshalJSON(data []byte) error {
@@ -82,13 +100,17 @@ func (t Target) MarshalJSON() ([]byte, error) {
 			Alias:     (*Alias)(&t),
 		})
 	}
-	return json.Marshal(&struct {
-		LocalPath []string `json:"local_path"`
-		*Alias
-	}{
-		LocalPath: t.LocalPaths,
-		Alias:     (*Alias)(&t),
-	})
+	if len(t.LocalPaths) > 1 {
+		return json.Marshal(&struct {
+			LocalPath []string `json:"local_path"`
+			*Alias
+		}{
+			LocalPath: t.LocalPaths,
+			Alias:     (*Alias)(&t),
+		})
+	}
+	// pairs mode or no local paths – marshal without local_path field
+	return json.Marshal((*Alias)(&t))
 }
 
 type ConfigFile struct {

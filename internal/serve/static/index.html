@@ -744,6 +744,103 @@ body {
 .add-target-row input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 .add-target-row input::placeholder { color: var(--text-3); }
 
+/* Upload mode toggle */
+.upload-mode-tabs {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+  width: fit-content;
+  margin-bottom: 0.65rem;
+}
+.upload-mode-tab {
+  padding: 0.28rem 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  transition: background 0.12s, color 0.12s;
+  letter-spacing: 0.04em;
+}
+.upload-mode-tab:not(:last-child) { border-right: 1px solid var(--border); }
+.upload-mode-tab.active { background: var(--accent-dim); color: var(--accent); font-weight: 500; }
+.upload-mode-tab:hover:not(.active) { background: var(--surface2); color: var(--text-2); }
+
+/* Pairs editor */
+.pairs-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.5rem;
+}
+.pair-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.45rem;
+  align-items: center;
+  animation: slideIn 0.15s ease-out both;
+}
+.pair-row input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  padding: 0.42rem 0.7rem;
+  font-size: 0.8rem;
+  font-family: var(--mono);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  width: 100%;
+}
+.pair-row input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+.pair-row input::placeholder { color: var(--text-3); }
+.pair-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-3);
+  padding: 0.3rem;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  transition: color 0.12s, background 0.12s;
+  flex-shrink: 0;
+}
+.pair-remove:hover { color: var(--danger); background: var(--danger-dim); }
+.pairs-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.45rem;
+  margin-bottom: 0.2rem;
+}
+.pairs-header span {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding-left: 0.1rem;
+}
+.add-pair-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-3);
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+  margin-top: 0.1rem;
+}
+.add-pair-btn:hover { border-color: var(--accent); color: var(--accent); }
+
 #genv-raw { flex-direction: column; }
 
 /* Raw textarea */
@@ -1539,6 +1636,12 @@ async function selectWorkspace(path) {
     // Normalize nulls that Go may serialize for empty maps
     if (!genvData.groups)  genvData.groups  = {};
     if (!genvData.targets) genvData.targets = {};
+    // Mark targets that use upload_pairs so the UI shows the correct mode
+    Object.values(genvData.targets).forEach(t => {
+      if (Array.isArray(t.upload_pairs) && t.upload_pairs.length > 0) {
+        t._upload_mode = 'pairs';
+      }
+    });
     renderGenvEditor();
   } catch(e) {
     showToast('读取 .genv 失败: ' + e.message, true);
@@ -1565,6 +1668,158 @@ async function removeWorkspace(path) {
       loadWorkspaces();
     }
   } catch(e) { showToast(e.message, true); }
+}
+
+// ── Upload mode section renderer ────────────────────
+// Returns HTML string for the upload mode tabs + fields inside a target card.
+// isPairs = true when upload_pairs is present and non-empty.
+function renderUploadModeSection(key, t) {
+  const k = esc(key);
+  const hasPairs = Array.isArray(t.upload_pairs) && t.upload_pairs.length > 0;
+  // Determine active mode: if upload_pairs exists (even empty array stored), use pairs mode
+  const isPairs = hasPairs || (t._upload_mode === 'pairs');
+
+  const localPath = t.local_path || t.localPath || '';
+  const localPathDisplay = Array.isArray(localPath) ? localPath.join('\n') : localPath;
+  const toPath = t.to_path || t.toPath || '';
+
+  // Build pairs rows HTML
+  const pairs = (t.upload_pairs || []);
+  const pairsRows = pairs.map((p, i) =>
+    `<div class="pair-row" id="pair-row-${k}-${i}">
+      <input id="tv-pair-from-${k}-${i}" value="${esc(p.from || '')}" oninput="markDirty()" placeholder="./frontend/dist" />
+      <input id="tv-pair-to-${k}-${i}" value="${esc(p.to || '')}" oninput="markDirty()" placeholder="/var/www/frontend" />
+      <button class="pair-remove" onclick="removePairRow('${k}','${esc(key)}',${i})" title="删除">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>`
+  ).join('');
+
+  return `
+    <div style="margin-bottom:0.1rem">
+      <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-3);letter-spacing:0.06em;margin-bottom:0.45rem">上传模式</div>
+      <div class="upload-mode-tabs">
+        <button class="upload-mode-tab${!isPairs ? ' active' : ''}" onclick="switchUploadMode('${esc(key)}','single')">单目标</button>
+        <button class="upload-mode-tab${isPairs ? ' active' : ''}" onclick="switchUploadMode('${esc(key)}','pairs')">多路径映射</button>
+      </div>
+    </div>
+
+    <!-- Single mode -->
+    <div id="tv-mode-single-${k}" style="display:${isPairs ? 'none' : 'block'}">
+      <div class="target-form-grid">
+        <div class="field">
+          <label>LOCAL_PATH（支持多个路径，每行一个）</label>
+          <textarea id="tv-local-${k}" oninput="markDirty()" placeholder="./dist&#10;./index.html" style="min-height:72px">${esc(localPathDisplay)}</textarea>
+        </div>
+        <div class="field">
+          <label>TO_PATH</label>
+          <input id="tv-to-${k}" value="${esc(toPath)}" oninput="markDirty()" placeholder="/var/www/app" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Pairs mode -->
+    <div id="tv-mode-pairs-${k}" style="display:${isPairs ? 'block' : 'none'}">
+      <div class="pairs-header">
+        <span>本地路径 (from)</span>
+        <span>远程路径 (to)</span>
+        <span></span>
+      </div>
+      <div class="pairs-editor" id="tv-pairs-${k}">
+        ${pairsRows || '<div style="font-family:var(--mono);font-size:0.78rem;color:var(--text-3);padding:0.2rem 0">暂无映射，点击下方添加</div>'}
+      </div>
+      <button class="add-pair-btn" onclick="addPairRow('${esc(key)}')">
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v9M1 5.5h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        添加路径映射
+      </button>
+    </div>`;
+}
+
+function switchUploadMode(key, mode) {
+  if (!genvData || !genvData.targets[key]) return;
+  // Flush current form state before switching
+  _collectTargetFields(key);
+  const t = genvData.targets[key];
+  if (mode === 'pairs') {
+    t._upload_mode = 'pairs';
+    if (!Array.isArray(t.upload_pairs)) t.upload_pairs = [];
+    // Clear single-mode fields to avoid confusion in buildRaw
+    t.local_path = undefined;
+    t.to_path = undefined;
+  } else {
+    t._upload_mode = 'single';
+    t.upload_pairs = undefined;
+    if (!t.local_path) t.local_path = './dist';
+    if (!t.to_path) t.to_path = '/var/www/app';
+  }
+  markDirty();
+  renderVisual();
+}
+
+function addPairRow(key) {
+  if (!genvData || !genvData.targets[key]) return;
+  _collectTargetFields(key);
+  const t = genvData.targets[key];
+  if (!Array.isArray(t.upload_pairs)) t.upload_pairs = [];
+  t.upload_pairs.push({ from: '', to: '' });
+  markDirty();
+  renderVisual();
+  // Focus the new from-input
+  const k = esc(key);
+  const idx = t.upload_pairs.length - 1;
+  setTimeout(() => {
+    const el = document.getElementById(`tv-pair-from-${k}-${idx}`);
+    if (el) el.focus();
+  }, 50);
+}
+
+function removePairRow(k, key, idx) {
+  if (!genvData || !genvData.targets[key]) return;
+  _collectTargetFields(key);
+  const t = genvData.targets[key];
+  if (Array.isArray(t.upload_pairs)) t.upload_pairs.splice(idx, 1);
+  markDirty();
+  renderVisual();
+}
+
+// Collect fields for a single target key from the DOM (without full re-render)
+function _collectTargetFields(key) {
+  if (!genvData || !genvData.targets[key]) return;
+  const k = esc(key);
+  const t = genvData.targets[key];
+
+  const aliasEl   = document.getElementById('tv-alias-' + k);
+  const defaultEl = document.getElementById('tv-default-' + k);
+  const cmdsEl    = document.getElementById('tv-cmds-' + k);
+  if (aliasEl)   t.active_alias = aliasEl.value;
+  if (defaultEl) t.is_default   = defaultEl.value === 'true';
+  if (cmdsEl)    t.commands     = cmdsEl.value.split('\n').map(s => s.trim()).filter(Boolean);
+
+  const isPairs = t._upload_mode === 'pairs' || (Array.isArray(t.upload_pairs) && t.upload_pairs !== undefined);
+  if (isPairs) {
+    // Collect pairs from DOM
+    const pairs = [];
+    let i = 0;
+    while (true) {
+      const fromEl = document.getElementById(`tv-pair-from-${k}-${i}`);
+      const toEl   = document.getElementById(`tv-pair-to-${k}-${i}`);
+      if (!fromEl) break;
+      pairs.push({ from: fromEl.value.trim(), to: toEl ? toEl.value.trim() : '' });
+      i++;
+    }
+    t.upload_pairs = pairs;
+    t.local_path = undefined;
+    t.to_path = undefined;
+  } else {
+    const localEl = document.getElementById('tv-local-' + k);
+    const toEl    = document.getElementById('tv-to-' + k);
+    if (localEl) {
+      const paths = localEl.value.split('\n').map(s => s.trim()).filter(Boolean);
+      t.local_path = paths.length === 1 ? paths[0] : paths;
+    }
+    if (toEl) t.to_path = toEl.value.trim();
+    t.upload_pairs = undefined;
+  }
 }
 
 // ── Render genv editor ───────────────────────────────
@@ -1644,10 +1899,6 @@ function renderVisual() {
     const isOpen = key === openTargetKey;
     const isDefault = t.is_default || t.isDefault;
     const alias = t.active_alias || t.activeAlias || '';
-    const localPath = t.local_path || t.localPath || '';
-    // Support both string and array for local_path
-    const localPathDisplay = Array.isArray(localPath) ? localPath.join('\n') : localPath;
-    const toPath = t.to_path || t.toPath || '';
     const commands = (t.commands || []).join('\n');
 
     const serverOptions = servers.map(s =>
@@ -1679,14 +1930,12 @@ function renderVisual() {
                   <option value="true" ${isDefault ? 'selected' : ''}>true</option>
                 </select>
               </div>
-              <div class="field">
-                <label>LOCAL_PATH（支持多个路径，每行一个）</label>
-                <textarea id="tv-local-${esc(key)}" oninput="markDirty()" placeholder="./dist&#10;./index.html&#10;./config/production.json" style="min-height:80px">${esc(localPathDisplay)}</textarea>
-              </div>
-              <div class="field">
-                <label>TO_PATH</label>
-                <input id="tv-to-${esc(key)}" value="${esc(toPath)}" oninput="markDirty()" placeholder="/var/www/app" />
-              </div>
+            </div>
+
+            <!-- Upload mode tabs -->
+            ${renderUploadModeSection(key, t)}
+
+            <div class="target-form-grid" style="margin-top:0.65rem">
               <div class="field" style="grid-column:1/-1">
                 <label>COMMANDS（每行一条）</label>
                 <textarea id="tv-cmds-${esc(key)}" oninput="markDirty()" placeholder="cd /var/www/app&#10;sudo systemctl restart app">${esc(commands)}</textarea>
@@ -1728,6 +1977,7 @@ function addTarget() {
   genvData.targets[key] = {
     active_alias: '',
     is_default: false,
+    _upload_mode: 'single',
     local_path: './dist',
     to_path: '/var/www/app',
     commands: ['cd /var/www/app', 'sudo systemctl restart app']
@@ -1793,28 +2043,7 @@ async function saveGenv() {
 function collectFromVisual() {
   if (!genvData) return;
   const keys = Object.keys(genvData.targets);
-  keys.forEach(key => {
-    const k = esc(key);
-    const aliasEl = document.getElementById('tv-alias-' + k);
-    const defaultEl = document.getElementById('tv-default-' + k);
-    const localEl = document.getElementById('tv-local-' + k);
-    const toEl = document.getElementById('tv-to-' + k);
-    const cmdsEl = document.getElementById('tv-cmds-' + k);
-    if (!aliasEl) return;
-    
-    // Parse local_path: split by newlines and filter empty lines
-    const localPaths = localEl.value.split('\n').map(s => s.trim()).filter(Boolean);
-    // If single path, store as string; if multiple, store as array
-    const localPathValue = localPaths.length === 1 ? localPaths[0] : localPaths;
-    
-    genvData.targets[key] = {
-      active_alias: aliasEl.value,
-      is_default: defaultEl.value === 'true',
-      local_path: localPathValue,
-      to_path: toEl.value.trim(),
-      commands: cmdsEl.value.split('\n').map(s => s.trim()).filter(Boolean)
-    };
-  });
+  keys.forEach(key => _collectTargetFields(key));
 }
 
 function buildRaw() {
@@ -1824,17 +2053,24 @@ function buildRaw() {
     out.groups = genvData.groups;
   }
   Object.entries(genvData.targets).forEach(([key, t]) => {
-    const localPath = t.local_path || t.localPath || '';
-    // Normalize: if array, keep as array; if string, keep as string
-    const localPathValue = Array.isArray(localPath) ? localPath : localPath;
-    
-    out[key] = {
-      active_alias: t.active_alias || t.activeAlias || '',
-      is_default: !!(t.is_default || t.isDefault),
-      local_path: localPathValue,
-      to_path: t.to_path || t.toPath || '',
-      commands: t.commands || []
-    };
+    const isPairs = Array.isArray(t.upload_pairs) && t.upload_pairs !== undefined && t._upload_mode !== 'single';
+    if (isPairs) {
+      out[key] = {
+        active_alias: t.active_alias || t.activeAlias || '',
+        is_default: !!(t.is_default || t.isDefault),
+        upload_pairs: (t.upload_pairs || []).filter(p => p.from || p.to),
+        commands: t.commands || []
+      };
+    } else {
+      const localPath = t.local_path || t.localPath || '';
+      out[key] = {
+        active_alias: t.active_alias || t.activeAlias || '',
+        is_default: !!(t.is_default || t.isDefault),
+        local_path: Array.isArray(localPath) ? localPath : localPath,
+        to_path: t.to_path || t.toPath || '',
+        commands: t.commands || []
+      };
+    }
   });
   return JSON.stringify(out, null, 2);
 }
