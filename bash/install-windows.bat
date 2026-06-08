@@ -71,19 +71,28 @@ echo.
 :: 设置环境变量
 echo [3/3] 配置环境变量...
 
-:: 检查 PATH 中是否已包含安装目录
-echo !PATH! | findstr /I /C:"%INSTALL_DIR%" >nul
-if not errorlevel 1 (
-    echo        环境变量已配置
-    goto :DONE
-)
+:: 获取当前用户 PATH
+for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "USER_PATH=%%B"
 
-:: 使用 PowerShell 追加到用户 PATH（避免 setx 截断问题）
-powershell -Command "$userPath = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($userPath -notlike '*%INSTALL_DIR%*') { [Environment]::SetEnvironmentVariable('Path', \"$userPath;%INSTALL_DIR%\", 'User'); Write-Host '        环境变量设置成功' } else { Write-Host '        环境变量已配置' }"
+:: 检查是否已包含安装目录
+if defined USER_PATH (
+    echo !USER_PATH! | findstr /I /C:"%INSTALL_DIR%" >nul
+    if not errorlevel 1 (
+        echo        环境变量已配置
+        goto :DONE
+    )
+    :: 追加到现有 PATH（使用 reg add 避免 setx 截断问题）
+    reg add "HKCU\Environment" /v Path /t REG_EXPAND_SZ /d "!USER_PATH!;%INSTALL_DIR%" /f >nul
+) else (
+    :: PATH 为空，直接设置
+    reg add "HKCU\Environment" /v Path /t REG_EXPAND_SZ /d "%INSTALL_DIR%" /f >nul
+)
 
 if errorlevel 1 (
     echo [警告] 自动设置环境变量失败，请手动添加以下路径到 PATH:
     echo        %INSTALL_DIR%
+) else (
+    echo        环境变量设置成功
 )
 echo.
 
