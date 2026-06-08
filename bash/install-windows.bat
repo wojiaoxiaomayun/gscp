@@ -78,21 +78,12 @@ if not errorlevel 1 (
     goto :DONE
 )
 
-:: 获取用户 PATH
-for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "USER_PATH=%%B"
-
-:: 添加到用户 PATH
-if defined USER_PATH (
-    setx PATH "!USER_PATH!;%INSTALL_DIR%"
-) else (
-    setx PATH "%INSTALL_DIR%"
-)
+:: 使用 PowerShell 追加到用户 PATH（避免 setx 截断问题）
+powershell -Command "$userPath = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($userPath -notlike '*%INSTALL_DIR%*') { [Environment]::SetEnvironmentVariable('Path', \"$userPath;%INSTALL_DIR%\", 'User'); Write-Host '        环境变量设置成功' } else { Write-Host '        环境变量已配置' }"
 
 if errorlevel 1 (
     echo [警告] 自动设置环境变量失败，请手动添加以下路径到 PATH:
     echo        %INSTALL_DIR%
-) else (
-    echo        环境变量设置成功
 )
 echo.
 
