@@ -32,6 +32,29 @@ go build -o gscp .
 go run . <command>
 ```
 
+## 快速安装（Windows）
+
+使用一键安装脚本自动下载安装 `gscp`：
+
+```bash
+# 下载安装脚本
+curl -L -o install-windows.bat https://raw.githubusercontent.com/wojiaoxiaomayun/gscp/main/bash/install-windows.bat
+
+# 运行安装脚本（右键选择"以管理员身份运行"或双击运行）
+install-windows.bat
+```
+
+安装脚本会自动：
+1. 下载 `gscp.exe` 到 `%USERPROFILE%\gscp` 目录
+2. 将安装目录添加到系统 PATH 环境变量
+3. 验证安装是否成功
+
+安装完成后，打开**新的**命令行窗口验证：
+
+```bash
+gscp --version
+```
+
 ## 命令
 
 ```bash

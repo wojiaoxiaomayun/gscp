@@ -32,6 +32,29 @@ Or run it directly during development:
 go run . <command>
 ```
 
+## Quick Install (Windows)
+
+Download and install `gscp` automatically using the one-click installer:
+
+```bash
+# Download the installer script
+curl -L -o install-windows.bat https://raw.githubusercontent.com/wojiaoxiaomayun/gscp/main/bash/install-windows.bat
+
+# Run the installer (right-click and select "Run as administrator" or double-click)
+install-windows.bat
+```
+
+The installer will:
+1. Download `gscp.exe` to `%USERPROFILE%\gscp`
+2. Add the installation directory to your PATH
+3. Verify the installation
+
+After installation, open a **new** command prompt and verify:
+
+```bash
+gscp --version
+```
+
 ## Commands
 
 ```bash
