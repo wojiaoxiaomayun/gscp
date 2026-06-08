@@ -7,6 +7,15 @@ echo        GSCP Windows 一键安装脚本
 echo ============================================
 echo.
 
+:: 检查管理员权限
+net session >nul 2>&1
+if errorlevel 1 (
+    echo [错误] 安装到系统环境变量需要管理员权限
+    echo        请右键点击此脚本，选择"以管理员身份运行"
+    pause
+    exit /b 1
+)
+
 :: 设置安装目录
 set "INSTALL_DIR=%USERPROFILE%\gscp"
 
@@ -71,28 +80,28 @@ echo.
 :: 设置环境变量
 echo [3/3] 配置环境变量...
 
-:: 获取当前用户 PATH
-for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "USER_PATH=%%B"
+:: 获取系统 PATH
+for /f "tokens=2*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "SYS_PATH=%%B"
 
 :: 检查是否已包含安装目录
-if defined USER_PATH (
-    echo !USER_PATH! | findstr /I /C:"%INSTALL_DIR%" >nul
+if defined SYS_PATH (
+    echo !SYS_PATH! | findstr /I /C:"%INSTALL_DIR%" >nul
     if not errorlevel 1 (
         echo        环境变量已配置
         goto :DONE
     )
-    :: 追加到现有 PATH（使用 reg add 避免 setx 截断问题）
-    reg add "HKCU\Environment" /v Path /t REG_EXPAND_SZ /d "!USER_PATH!;%INSTALL_DIR%" /f >nul
+    :: 追加到现有系统 PATH（使用 reg add 避免 setx 截断问题）
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path /t REG_EXPAND_SZ /d "!SYS_PATH!;%INSTALL_DIR%" /f >nul
 ) else (
     :: PATH 为空，直接设置
-    reg add "HKCU\Environment" /v Path /t REG_EXPAND_SZ /d "%INSTALL_DIR%" /f >nul
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path /t REG_EXPAND_SZ /d "%INSTALL_DIR%" /f >nul
 )
 
 if errorlevel 1 (
-    echo [警告] 自动设置环境变量失败，请手动添加以下路径到 PATH:
+    echo [警告] 自动设置环境变量失败，请手动添加以下路径到系统 PATH:
     echo        %INSTALL_DIR%
 ) else (
-    echo        环境变量设置成功
+    echo        系统环境变量设置成功
 )
 echo.
 
