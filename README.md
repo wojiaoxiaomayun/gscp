@@ -59,6 +59,7 @@ gscp --version
 
 ```bash
 gscp add <alias> <host[:port]> <username> <password>
+gscp add -i <key_path> [-P <passphrase>] <alias> <host[:port]> <username> [password]
 gscp add -r <json_url>
 gscp init
 gscp ls
@@ -79,7 +80,15 @@ gscp add prod 192.168.1.10 root mypassword
 gscp add prod 192.168.1.10:2222 root mypassword
 ```
 
-If no port is provided, SSH defaults to `22`.
+Add a server with an SSH private key. Use `-P` for an encrypted key; the optional final password is used as an SSH fallback:
+
+```bash
+gscp add -i ~/.ssh/id_ed25519 prod 192.168.1.10 root
+gscp add -i ~/.ssh/id_ed25519 -P "key passphrase" prod 192.168.1.10 root
+gscp add -i ~/.ssh/id_ed25519 prod 192.168.1.10 root fallback-password
+```
+
+When both are configured, SSH tries the private key first and then the password. If no port is provided, SSH defaults to `22`.
 
 Import server profiles from a remote JSON file:
 
@@ -102,7 +111,8 @@ The remote JSON must use the same structure as the local `servers.json` file:
       "alias": "staging",
       "host": "192.168.1.20",
       "username": "deploy",
-      "password": "secret"
+      "key_path": "~/.ssh/id_ed25519",
+      "key_pass": "optional passphrase"
     }
   }
 }
@@ -292,9 +302,9 @@ Group runs execute the listed environments one by one in the order they appear i
 
 ## `sudo` Support
 
-If a command starts with `sudo `, `gscp` automatically rewrites it to use the saved server password with `sudo -S`.
+If a command starts with `sudo ` and the server profile has a saved `password`, `gscp` automatically rewrites it to use that password with `sudo -S`. When both a private key and password are configured, the password is also the SSH fallback and the `sudo` password.
 
-It also requests a TTY for remote command execution so servers that require a TTY for `sudo` can work.
+A key-only profile does not have a password to send to `sudo`; its remote account must therefore have passwordless `sudo` configured for such commands. `gscp` also requests a TTY for remote command execution so servers that require a TTY for `sudo` can work.
 
 ## Workspace Tracking
 
@@ -328,6 +338,8 @@ Open `http://localhost:8080` in your browser.
 | `GET` | `/api/settings` | Get current scan settings |
 | `PUT` | `/api/settings` | Update scan settings |
 
+Server responses never include `password` or `key_pass`. They expose `has_password` and `has_key_pass` booleans instead. On `PUT`, omitting a credential preserves its saved value; sending an empty string explicitly clears it. Clearing `key_path` also clears its passphrase, and at least one of `password` or `key_path` must remain.
+
 ### Scan API (SSE)
 
 `GET /api/scan` streams three event types:
@@ -353,6 +365,7 @@ Scan settings control which directories are skipped and which roots are searched
 Settings are persisted in the global `servers.json` config file.
 
 ## Notes
+- Server passwords and private-key passphrases are currently stored as plaintext in the local config file. The file is written with owner-only permissions where supported.
 - SSH host key checking currently uses `InsecureIgnoreHostKey`.
 - The TUI log view keeps only recent log lines.
 

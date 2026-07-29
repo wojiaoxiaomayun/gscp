@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"gscp/internal/config"
@@ -47,6 +48,68 @@ func TestSelectDefaultEnvRejectsMultipleDefaults(t *testing.T) {
 
 	if _, err := selectDefaultEnv(targets); err == nil {
 		t.Fatal("expected multiple defaults error")
+	}
+}
+
+func useTempConfigDir(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("APPDATA", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+}
+
+func TestRunAddAuthenticationModes(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want config.Server
+	}{
+		{
+			name: "password",
+			args: []string{"password", "host", "root", " password secret "},
+			want: config.Server{Alias: "password", Host: "host", Username: "root", Password: " password secret "},
+		},
+		{
+			name: "private key",
+			args: []string{"-i", " ~/.ssh/id_ed25519 ", "-P", " key secret ", "key", "host", "deploy"},
+			want: config.Server{Alias: "key", Host: "host", Username: "deploy", KeyPath: "~/.ssh/id_ed25519", KeyPass: " key secret "},
+		},
+		{
+			name: "private key with password fallback",
+			args: []string{"-i", "~/.ssh/id_rsa", "fallback", "host", "deploy", " fallback secret "},
+			want: config.Server{Alias: "fallback", Host: "host", Username: "deploy", Password: " fallback secret ", KeyPath: "~/.ssh/id_rsa"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useTempConfigDir(t)
+			if err := runAdd(tt.args); err != nil {
+				t.Fatalf("run add: %v", err)
+			}
+			store, err := config.Load()
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			if got := store.Servers[tt.want.Alias]; !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("unexpected server: got %+v want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunAddRejectsPassphraseWithoutKey(t *testing.T) {
+	useTempConfigDir(t)
+	err := runAdd([]string{"-P", "passphrase", "alias", "host", "root", "password"})
+	if err == nil || !strings.Contains(err.Error(), "-P requires -i") {
+		t.Fatalf("expected -P validation error, got %v", err)
+	}
+	store, loadErr := config.Load()
+	if loadErr != nil {
+		t.Fatalf("load config: %v", loadErr)
+	}
+	if len(store.Servers) != 0 {
+		t.Fatalf("invalid command should not save servers: %+v", store.Servers)
 	}
 }
 

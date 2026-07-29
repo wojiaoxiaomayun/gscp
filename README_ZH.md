@@ -59,6 +59,7 @@ gscp --version
 
 ```bash
 gscp add <alias> <host[:port]> <username> <password>
+gscp add -i <key_path> [-P <passphrase>] <alias> <host[:port]> <username> [password]
 gscp add -r <json_url>
 gscp init
 gscp ls
@@ -79,7 +80,15 @@ gscp add prod 192.168.1.10 root mypassword
 gscp add prod 192.168.1.10:2222 root mypassword
 ```
 
-如果没有填写端口，SSH 默认使用 `22`。
+使用 SSH 私钥添加服务器。加密私钥通过 `-P` 提供口令；末尾可选密码可作为 SSH 回退：
+
+```bash
+gscp add -i ~/.ssh/id_ed25519 prod 192.168.1.10 root
+gscp add -i ~/.ssh/id_ed25519 -P "私钥口令" prod 192.168.1.10 root
+gscp add -i ~/.ssh/id_ed25519 prod 192.168.1.10 root fallback-password
+```
+
+同时配置私钥和密码时，SSH 会先尝试私钥，再尝试密码。如果没有填写端口，SSH 默认使用 `22`。
 
 从远程 JSON 地址导入服务器配置：
 
@@ -102,7 +111,8 @@ gscp add -r https://example.com/servers.json
       "alias": "staging",
       "host": "192.168.1.20",
       "username": "deploy",
-      "password": "secret"
+      "key_path": "~/.ssh/id_ed25519",
+      "key_pass": "可选的私钥口令"
     }
   }
 }
@@ -293,9 +303,9 @@ gscp run -g prod-all
 
 ## `sudo` 支持
 
-如果某条命令以 `sudo ` 开头，`gscp` 会自动改写为使用已保存的服务器密码配合 `sudo -S` 执行。
+如果某条命令以 `sudo ` 开头，并且服务器配置保存了 `password`，`gscp` 会自动改写为使用该密码配合 `sudo -S` 执行。同时配置私钥和密码时，该密码既是 SSH 回退密码，也是 `sudo` 密码。
 
-同时它会为远程命令申请一个 TTY，所以对 “必须在 TTY 中执行 sudo” 的服务器也更友好。
+纯私钥配置没有可发送给 `sudo` 的密码，因此远端账号必须为相关命令配置免密 `sudo`。`gscp` 同时会为远程命令申请一个 TTY，所以对“必须在 TTY 中执行 sudo”的服务器也更友好。
 
 ## 工作区记录
 
@@ -329,6 +339,8 @@ gscp serve :9090    # 自定义端口
 | `GET` | `/api/settings` | 获取当前扫描设置 |
 | `PUT` | `/api/settings` | 更新扫描设置 |
 
+服务器接口响应不会返回 `password` 或 `key_pass`，而是通过 `has_password`、`has_key_pass` 表示凭据是否存在。调用 `PUT` 时，省略凭据字段表示保留原值，显式发送空字符串表示清除；清空 `key_path` 也会清除对应私钥口令，并且最终必须至少保留 `password` 或 `key_path` 之一。
+
 ### 扫描 API（SSE）
 
 `GET /api/scan` 会以 Server-Sent Events 的形式推送三种事件：
@@ -355,7 +367,7 @@ gscp serve :9090    # 自定义端口
 
 ## 注意事项
 
-- 服务器密码目前仍然是明文保存在本地配置里
+- 服务器密码和私钥口令目前仍然以明文保存在本地配置文件中；在支持权限位的系统上，该文件会以仅属主可读写的权限创建
 - SSH host key 校验当前使用的是 `InsecureIgnoreHostKey`
 - TUI 日志区目前只保留最近一部分日志
 

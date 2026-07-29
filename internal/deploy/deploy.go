@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -217,17 +218,84 @@ func dialSSH(server config.Server) (*ssh.Client, error) {
 		host = net.JoinHostPort(host, "22")
 	}
 
+	authMethods, keyErr := buildAuthMethods(server)
+	if len(authMethods) == 0 {
+		if keyErr != nil {
+			return nil, keyErr
+		}
+		return nil, errors.New("no authentication method configured (provide password or key_path)")
+	}
+
 	client, err := ssh.Dial("tcp", host, &ssh.ClientConfig{
 		User:            server.Username,
-		Auth:            []ssh.AuthMethod{ssh.Password(server.Password)},
+		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,
 	})
 	if err != nil {
+		if keyErr != nil {
+			return nil, fmt.Errorf("ssh dial %s: %w (private key was unavailable: %v)", host, err, keyErr)
+		}
 		return nil, fmt.Errorf("ssh dial %s: %w", host, err)
 	}
 
 	return client, nil
+}
+
+func buildAuthMethods(server config.Server) ([]ssh.AuthMethod, error) {
+	authMethods := make([]ssh.AuthMethod, 0, 2)
+	var keyErr error
+
+	if server.KeyPath != "" {
+		signer, err := loadPrivateKey(server.KeyPath, server.KeyPass)
+		if err != nil {
+			keyErr = err
+		} else {
+			authMethods = append(authMethods, ssh.PublicKeys(signer))
+		}
+	}
+	if server.Password != "" {
+		authMethods = append(authMethods, ssh.Password(server.Password))
+	}
+
+	return authMethods, keyErr
+}
+
+func loadPrivateKey(keyPath, passphrase string) (ssh.Signer, error) {
+	keyPath = expandHome(keyPath)
+
+	data, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("read private key %q: %w", keyPath, err)
+	}
+
+	signer, err := ssh.ParsePrivateKey(data)
+	if err == nil {
+		return signer, nil
+	}
+	var missingPassphrase *ssh.PassphraseMissingError
+	if !errors.As(err, &missingPassphrase) {
+		return nil, fmt.Errorf("parse private key %q: %w", keyPath, err)
+	}
+	if passphrase == "" {
+		return nil, fmt.Errorf("parse private key %q: key is encrypted but key_pass is empty", keyPath)
+	}
+
+	signer, err = ssh.ParsePrivateKeyWithPassphrase(data, []byte(passphrase))
+	if err != nil {
+		return nil, fmt.Errorf("parse encrypted private key %q: %w", keyPath, err)
+	}
+	return signer, nil
+}
+
+func expandHome(p string) string {
+	if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(home, p[2:])
+		}
+	}
+	return p
 }
 
 func buildUploadPlan(localPath, remoteBase string, info fs.FileInfo) ([]uploadItem, error) {
