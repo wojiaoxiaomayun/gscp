@@ -21,7 +21,9 @@ type Server struct {
 	Alias    string `json:"alias"`
 	Host     string `json:"host"`
 	Username string `json:"username"`
-	Password string `json:"password"`
+	Password string `json:"password,omitempty"`
+	KeyPath  string `json:"key_path,omitempty"`
+	KeyPass  string `json:"key_pass,omitempty"`
 }
 
 // ScanSettings holds configuration for the local .genv file scanner.
@@ -96,6 +98,23 @@ func Parse(data []byte) (*Store, error) {
 }
 
 func (s *Store) Save() error {
+	if s == nil {
+		return errors.New("config store cannot be nil")
+	}
+	if s.Servers == nil {
+		s.Servers = map[string]Server{}
+	}
+	for alias, server := range s.Servers {
+		if strings.TrimSpace(server.Alias) == "" {
+			server.Alias = alias
+		}
+		server = normalizeServer(server)
+		if err := validateServer(server, alias); err != nil {
+			return err
+		}
+		s.Servers[alias] = server
+	}
+
 	path, err := configFilePath()
 	if err != nil {
 		return err
@@ -199,13 +218,27 @@ func configFilePath() (string, error) {
 	return filepath.Join(configRoot, configDirName, configFileName), nil
 }
 
+func ValidateServer(server Server) error {
+	return validateServer(normalizeServer(server), "")
+}
+
+func NormalizeServer(server Server) Server {
+	return normalizeServer(server)
+}
+
 func validateServer(server Server, fallbackAlias string) error {
 	alias := strings.TrimSpace(server.Alias)
 	if alias == "" {
 		alias = strings.TrimSpace(fallbackAlias)
 	}
-	if alias == "" || strings.TrimSpace(server.Host) == "" || strings.TrimSpace(server.Username) == "" || server.Password == "" {
-		return errors.New("alias, host, username and password cannot be empty")
+	if alias == "" || strings.TrimSpace(server.Host) == "" || strings.TrimSpace(server.Username) == "" {
+		return errors.New("alias, host and username cannot be empty")
+	}
+	if strings.TrimSpace(server.Password) == "" && strings.TrimSpace(server.KeyPath) == "" {
+		return errors.New("either password or key_path must be provided")
+	}
+	if strings.TrimSpace(server.KeyPath) == "" && server.KeyPass != "" {
+		return errors.New("key_pass requires key_path")
 	}
 	return nil
 }
@@ -214,5 +247,6 @@ func normalizeServer(server Server) Server {
 	server.Alias = strings.TrimSpace(server.Alias)
 	server.Host = strings.TrimSpace(server.Host)
 	server.Username = strings.TrimSpace(server.Username)
+	server.KeyPath = strings.TrimSpace(server.KeyPath)
 	return server
 }

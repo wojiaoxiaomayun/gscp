@@ -270,6 +270,12 @@ body {
 .field input:hover:not(:focus):not(:disabled) { border-color: oklch(35% 0.018 255); }
 .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 .field input:disabled { opacity: 0.45; cursor: not-allowed; }
+.field label input[type="checkbox"] {
+  width: auto;
+  margin-right: 0.35rem;
+  padding: 0;
+  vertical-align: middle;
+}
 .form-footer {
   margin-top: 1rem;
   display: flex;
@@ -1197,7 +1203,7 @@ body {
           </div>
           <div class="import-status" id="import-status"></div>
           <div style="margin-top:0.6rem;font-size:0.75rem;color:var(--text-3);font-family:var(--mono)">
-            JSON 格式：<code style="color:var(--text-2)">[{"alias":"x","host":"1.2.3.4:22","username":"root","password":"xxx"}]</code>
+            JSON 格式：<code style="color:var(--text-2)">[{"alias":"x","host":"1.2.3.4:22","username":"root","key_path":"~/.ssh/id_ed25519","key_pass":"可选"}]</code>（password 或 key_path 至少一个）
           </div>
         </div>
       </div>
@@ -1221,7 +1227,15 @@ body {
             </div>
             <div class="field">
               <label>PASSWORD</label>
-              <input id="f-pass" type="password" placeholder="" />
+              <input id="f-pass" type="password" placeholder="密码或密钥至少填一个" />
+            </div>
+            <div class="field">
+              <label>SSH 私钥路径（可选）</label>
+              <input id="f-keypath" placeholder="~/.ssh/id_rsa" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label>私钥密码（可选）</label>
+              <input id="f-keypass" type="password" placeholder="加密私钥的密码" />
             </div>
           </div>
           <div class="form-footer">
@@ -1451,7 +1465,7 @@ function renderList() {
       <div class="server-item">
         <div><span class="alias-badge">${esc(s.alias)}</span></div>
         <div class="host-text">${esc(s.host)}</div>
-        <div class="user-text">${esc(s.username)}</div>
+        <div class="user-text">${esc(s.username)} ${s.key_path ? '<span title="密钥认证" style="color:var(--accent);font-size:0.75rem;">🔑</span>' : ''} ${s.has_password ? '<span title="已保存密码" style="color:var(--text-3);font-size:0.75rem;">●</span>' : ''}</div>
         <div class="item-actions">
           <button class="btn btn-edit btn-sm" onclick="toggleEdit('${esc(s.alias)}')">编辑</button>
           <button class="btn btn-danger-ghost btn-sm" onclick="deleteServer('${esc(s.alias)}')">删除</button>
@@ -1469,9 +1483,19 @@ function renderList() {
                 <label>USERNAME</label>
                 <input id="e-user-${esc(s.alias)}" value="${esc(s.username)}" />
               </div>
-              <div class="field" style="grid-column:1/-1">
+              <div class="field">
                 <label>PASSWORD（留空则不修改）</label>
-                <input id="e-pass-${esc(s.alias)}" type="password" placeholder="" />
+                <input id="e-pass-${esc(s.alias)}" type="password" placeholder="${s.has_password ? '已保存密码' : '未配置'}" />
+                <label style="margin-top:0.45rem;text-transform:none"><input id="e-clear-pass-${esc(s.alias)}" type="checkbox" ${s.has_password ? '' : 'disabled'} /> 清除已保存密码</label>
+              </div>
+              <div class="field">
+                <label>SSH 私钥路径（清空即移除密钥）</label>
+                <input id="e-keypath-${esc(s.alias)}" value="${esc(s.key_path || '')}" placeholder="~/.ssh/id_rsa" />
+              </div>
+              <div class="field" style="grid-column:1/-1">
+                <label>私钥密码（留空则不修改）</label>
+                <input id="e-keypass-${esc(s.alias)}" type="password" placeholder="${s.has_key_pass ? '已保存私钥密码' : '未配置'}" />
+                <label style="margin-top:0.45rem;text-transform:none"><input id="e-clear-keypass-${esc(s.alias)}" type="checkbox" ${s.has_key_pass ? '' : 'disabled'} /> 清除已保存私钥密码</label>
               </div>
             </div>
             <div class="form-footer">
@@ -1503,16 +1527,23 @@ async function addServer() {
   const host  = document.getElementById('f-host').value.trim();
   const user  = document.getElementById('f-user').value.trim();
   const pass  = document.getElementById('f-pass').value;
+  const keyPath = document.getElementById('f-keypath').value.trim();
+  const keyPass = document.getElementById('f-keypass').value;
   const errEl = document.getElementById('add-err');
-  if (!alias || !host || !user || !pass) { errEl.textContent = '所有字段均为必填'; return; }
+  if (!alias || !host || !user) { errEl.textContent = '别名、主机和用户名必填'; return; }
+  if (!pass && !keyPath) { errEl.textContent = '密码和私钥路径至少填一个'; return; }
+  if (keyPass && !keyPath) { errEl.textContent = '填写私钥密码前请先填写私钥路径'; return; }
   errEl.textContent = '';
   try {
+    const payload = {alias, host, username: user};
+    if (pass) payload.password = pass;
+    if (keyPath) { payload.key_path = keyPath; if (keyPass) payload.key_pass = keyPass; }
     const res = await fetch('/api/servers', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({alias, host, username: user, password: pass})
+      body: JSON.stringify(payload)
     });
     if (!res.ok) { const d = await res.json(); errEl.textContent = d.error || '添加失败'; return; }
-    ['f-alias','f-host','f-user','f-pass'].forEach(id => document.getElementById(id).value = '');
+    ['f-alias','f-host','f-user','f-pass','f-keypath','f-keypass'].forEach(id => document.getElementById(id).value = '');
     showToast('服务器已添加');
     loadServers();
   } catch(e) { errEl.textContent = e.message; }
@@ -1521,14 +1552,29 @@ async function addServer() {
 //  Save edit 
 async function saveEdit(alias) {
   const s = servers.find(x => x.alias === alias);
+  if (!s) { showToast('服务器配置不存在', true); return; }
   const host = document.getElementById('e-host-' + alias).value.trim();
   const user = document.getElementById('e-user-' + alias).value.trim();
-  const pass = document.getElementById('e-pass-' + alias).value || (s && s.password) || '';
+  const pass = document.getElementById('e-pass-' + alias).value;
+  const keyPath = document.getElementById('e-keypath-' + alias).value.trim();
+  const keyPass = document.getElementById('e-keypass-' + alias).value;
+  const clearPass = document.getElementById('e-clear-pass-' + alias).checked;
+  const clearKeyPass = document.getElementById('e-clear-keypass-' + alias).checked;
   if (!host || !user) { showToast('主机和用户名不能为空', true); return; }
+  if (pass && clearPass) { showToast('不能同时设置和清除密码', true); return; }
+  if (keyPass && clearKeyPass) { showToast('不能同时设置和清除私钥密码', true); return; }
+  if (keyPass && !keyPath) { showToast('填写私钥密码前请先填写私钥路径', true); return; }
+  const hasPassword = pass ? true : (clearPass ? false : s.has_password);
+  if (!hasPassword && !keyPath) { showToast('密码和私钥路径至少保留一个', true); return; }
   try {
+    const payload = {host, username: user, key_path: keyPath};
+    if (pass) payload.password = pass;
+    else if (clearPass) payload.password = '';
+    if (keyPass) payload.key_pass = keyPass;
+    else if (clearKeyPass) payload.key_pass = '';
     const res = await fetch('/api/servers/' + encodeURIComponent(alias), {
       method: 'PUT', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({host, username: user, password: pass})
+      body: JSON.stringify(payload)
     });
     if (!res.ok) { const d = await res.json(); showToast(d.error || '保存失败', true); return; }
     const panel = document.getElementById('panel-' + alias);
@@ -1565,12 +1611,16 @@ async function importFromURL() {
     if (!Array.isArray(data)) throw new Error('JSON 必须是数组格式');
     let added = 0, skipped = 0, errors = [];
     for (const item of data) {
-      if (!item.alias || !item.host || !item.username || !item.password) {
+      if (!item.alias || !item.host || !item.username || (!item.password && !item.key_path) || (item.key_pass && !item.key_path)) {
         errors.push(item.alias || '?'); continue;
       }
+      const payload = {alias: item.alias, host: item.host, username: item.username};
+      if (item.password) payload.password = item.password;
+      if (item.key_path) payload.key_path = item.key_path;
+      if (item.key_pass) payload.key_pass = item.key_pass;
       const r = await fetch('/api/servers', {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({alias: item.alias, host: item.host, username: item.username, password: item.password})
+        body: JSON.stringify(payload)
       });
       if (r.ok || r.status === 201) { added++; }
       else { const d = await r.json(); if (d.error && d.error.includes('exist')) skipped++; else errors.push(item.alias); }

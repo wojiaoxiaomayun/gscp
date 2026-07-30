@@ -97,6 +97,42 @@ func portFromAddr(addr string) string {
 	return ":" + port
 }
 
+type serverResponse struct {
+	Alias       string `json:"alias"`
+	Host        string `json:"host"`
+	Username    string `json:"username"`
+	KeyPath     string `json:"key_path,omitempty"`
+	HasPassword bool   `json:"has_password"`
+	HasKeyPass  bool   `json:"has_key_pass"`
+}
+
+type serverUpdateRequest struct {
+	Host     string  `json:"host"`
+	Username string  `json:"username"`
+	Password *string `json:"password"`
+	KeyPath  *string `json:"key_path"`
+	KeyPass  *string `json:"key_pass"`
+}
+
+func publicServer(server config.Server) serverResponse {
+	return serverResponse{
+		Alias:       server.Alias,
+		Host:        server.Host,
+		Username:    server.Username,
+		KeyPath:     server.KeyPath,
+		HasPassword: server.Password != "",
+		HasKeyPass:  server.KeyPass != "",
+	}
+}
+
+func publicServers(servers []config.Server) []serverResponse {
+	result := make([]serverResponse, 0, len(servers))
+	for _, server := range servers {
+		result = append(result, publicServer(server))
+	}
+	return result
+}
+
 // handleServers handles GET /api/servers and POST /api/servers
 func handleServers(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -106,7 +142,7 @@ func handleServers(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		jsonOK(w, store.List())
+		jsonOK(w, publicServers(store.List()))
 
 	case http.MethodPost:
 		var server config.Server
@@ -114,8 +150,9 @@ func handleServers(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if server.Alias == "" || server.Host == "" || server.Username == "" || server.Password == "" {
-			jsonError(w, "alias, host, username and password are required", http.StatusBadRequest)
+		server = config.NormalizeServer(server)
+		if err := config.ValidateServer(server); err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -129,8 +166,9 @@ func handleServers(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		jsonOK(w, server)
+		_ = json.NewEncoder(w).Encode(publicServer(server))
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -159,14 +197,9 @@ func handleServerByAlias(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodPut:
-		var server config.Server
-		if err := json.NewDecoder(r.Body).Decode(&server); err != nil {
+		var update serverUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 			jsonError(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		server.Alias = alias
-		if server.Host == "" || server.Username == "" || server.Password == "" {
-			jsonError(w, "host, username and password are required", http.StatusBadRequest)
 			return
 		}
 
@@ -175,12 +208,39 @@ func handleServerByAlias(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		server, ok := store.Servers[alias]
+		if !ok {
+			jsonError(w, fmt.Sprintf("server %q not found", alias), http.StatusNotFound)
+			return
+		}
+
+		server.Alias = alias
+		server.Host = update.Host
+		server.Username = update.Username
+		if update.Password != nil {
+			server.Password = *update.Password
+		}
+		if update.KeyPath != nil {
+			server.KeyPath = *update.KeyPath
+			if strings.TrimSpace(*update.KeyPath) == "" {
+				server.KeyPass = ""
+			}
+		}
+		if update.KeyPass != nil {
+			server.KeyPass = *update.KeyPass
+		}
+		server = config.NormalizeServer(server)
+		if err := config.ValidateServer(server); err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
 		store.Upsert(server)
 		if err := store.Save(); err != nil {
 			jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		jsonOK(w, server)
+		jsonOK(w, publicServer(server))
 
 	case http.MethodDelete:
 		store, err := config.Load()

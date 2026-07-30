@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -45,29 +46,63 @@ func Run(args []string) error {
 	}
 }
 
+const addUsage = "usage: gscp add <alias> <host[:port]> <username> <password>\n       gscp add -i <key_path> [-P <passphrase>] <alias> <host[:port]> <username> [password]\n       gscp add -r <json_url>"
+
 func runAdd(args []string) error {
 	if len(args) == 2 && strings.TrimSpace(args[0]) == "-r" {
 		return runAddRemote(strings.TrimSpace(args[1]))
 	}
-	if len(args) != 4 {
-		return errors.New("usage: gscp add <alias> <host[:port]> <username> <password>\n       gscp add -r <json_url>")
+	if len(args) > 0 && strings.TrimSpace(args[0]) == "-r" {
+		return errors.New(addUsage)
+	}
+
+	flags := flag.NewFlagSet("gscp add", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	keyPath := flags.String("i", "", "private key path")
+	keyPass := flags.String("P", "", "private key passphrase")
+	if err := flags.Parse(args); err != nil {
+		return fmt.Errorf("%s: %w", addUsage, err)
+	}
+
+	remaining := flags.Args()
+	if *keyPass != "" && strings.TrimSpace(*keyPath) == "" {
+		return errors.New("-P requires -i\n" + addUsage)
+	}
+
+	var server config.Server
+	if strings.TrimSpace(*keyPath) != "" {
+		if len(remaining) != 3 && len(remaining) != 4 {
+			return errors.New(addUsage)
+		}
+		server = config.Server{
+			Alias:    strings.TrimSpace(remaining[0]),
+			Host:     strings.TrimSpace(remaining[1]),
+			Username: strings.TrimSpace(remaining[2]),
+			KeyPath:  strings.TrimSpace(*keyPath),
+			KeyPass:  *keyPass,
+		}
+		if len(remaining) == 4 {
+			server.Password = remaining[3]
+		}
+	} else {
+		if len(remaining) != 4 {
+			return errors.New(addUsage)
+		}
+		server = config.Server{
+			Alias:    strings.TrimSpace(remaining[0]),
+			Host:     strings.TrimSpace(remaining[1]),
+			Username: strings.TrimSpace(remaining[2]),
+			Password: remaining[3],
+		}
+	}
+	if err := config.ValidateServer(server); err != nil {
+		return err
 	}
 
 	store, err := config.Load()
 	if err != nil {
 		return err
 	}
-
-	server := config.Server{
-		Alias:    strings.TrimSpace(args[0]),
-		Host:     strings.TrimSpace(args[1]),
-		Username: strings.TrimSpace(args[2]),
-		Password: args[3],
-	}
-	if server.Alias == "" || server.Host == "" || server.Username == "" || server.Password == "" {
-		return errors.New("alias, host[:port], username and password cannot be empty")
-	}
-
 	store.Upsert(server)
 	if err := store.Save(); err != nil {
 		return err
@@ -390,6 +425,7 @@ func printUsage() {
 
 Usage:
   gscp add <alias> <host[:port]> <username> <password>
+  gscp add -i <key_path> [-P <passphrase>] <alias> <host[:port]> <username> [password]
   gscp add -r <json_url>
   gscp init
   gscp ls
@@ -407,6 +443,8 @@ With -g it runs all envs in the named group sequentially.
 The serve command starts a local web UI for managing server configs.
   addr defaults to :8080 (e.g. gscp serve :9090 to use a different port).
 If host does not include a port, SSH defaults to 22.
+Use -i to specify a private key file for SSH key authentication.
+Use -P to provide a passphrase for an encrypted private key.
 Example .genv (single mode):
   {
     "groups": {
