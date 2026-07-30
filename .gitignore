@@ -3,3 +3,5 @@
 .genv
 gscp.exe
 output
+.agents
+skills-lock.json
