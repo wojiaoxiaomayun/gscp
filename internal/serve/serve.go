@@ -21,6 +21,8 @@ import (
 func Run(addr string) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleIndex)
+	mux.HandleFunc("/style.css", handleStyleCSS)
+	mux.HandleFunc("/app.js", handleAppJS)
 	mux.HandleFunc("/api/servers", handleServers)
 	mux.HandleFunc("/api/servers/", handleServerByAlias)
 	mux.HandleFunc("/api/workspaces", handleWorkspaces)
@@ -52,6 +54,8 @@ func Run(addr string) error {
 func RunWithContext(ctx context.Context, addr string) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleIndex)
+	mux.HandleFunc("/style.css", handleStyleCSS)
+	mux.HandleFunc("/app.js", handleAppJS)
 	mux.HandleFunc("/api/servers", handleServers)
 	mux.HandleFunc("/api/servers/", handleServerByAlias)
 	mux.HandleFunc("/api/workspaces", handleWorkspaces)
