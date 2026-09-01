@@ -165,6 +165,7 @@ Example:
     "is_default": true,
     "local_path": "./dist",
     "to_path": "/var/www/dev",
+    "ignore": ["static", "*.map"],
     "commands": [
       "cd /var/www/dev",
       "sudo systemctl restart dev-app"
@@ -203,6 +204,7 @@ Fields:
   - String array: multiple files or directories, e.g. `["./dist", "./config.json", "./scripts"]`
 - `to_path`: remote target directory
 - `commands`: commands to run after upload
+- `ignore`: optional list of files or directories to exclude from upload. Applied independently to each upload source (each `local_path` entry or each `upload_pairs[].from`). See [Ignoring Files](#ignoring-files).
 
 ### Multiple Paths Upload Example
 
@@ -245,6 +247,7 @@ Use `upload_pairs` when you need to upload different local paths to **different*
       { "from": "./frontend/dist", "to": "/var/www/frontend" },
       { "from": "./backend/bin",   "to": "/opt/app/bin" }
     ],
+    "ignore": ["node_modules"],
     "commands": [
       "sudo systemctl restart app"
     ]
@@ -259,6 +262,30 @@ Fields:
   - `to`: remote target directory for this specific pair
 
 Each pair is uploaded sequentially and progress is reported per pair.
+
+### Ignoring Files
+
+`ignore` excludes files or directories from upload. It applies to every upload source independently: each entry of `local_path` (string or array) and each `upload_pairs[].from` is treated as its own root.
+
+```json
+{
+  "dev": {
+    "active_alias": "dev-server",
+    "local_path": "./dist",
+    "to_path": "/var/www/app",
+    "ignore": ["static", "*.map"],
+    "commands": []
+  }
+}
+```
+
+Matching rules:
+
+- A pattern **without `/`** matches the name at any depth: `static` skips the whole `static` subtree wherever it appears under the source, `*.map` skips every `.map` file, and standard glob syntax (`?`, `[a-z]`, `*`) is supported.
+- A pattern **with `/`** is anchored at the source root and matched segment by segment: `static/**` skips everything under `static/`, `assets/**/cache` skips any `cache` directory nested under `assets/`.
+- Matching a directory skips its entire subtree; if the source root itself matches a non-directory entry, that whole source is skipped.
+- Windows-style backslashes in patterns are normalized automatically.
+- In the JSON file `ignore` is a string array; in the visual editor each line is one pattern and blank entries are ignored.
 
 ## Run Deployments
 
@@ -329,6 +356,8 @@ Open `http://localhost:8080` in your browser.
 | `POST` | `/api/servers` | Add or update a server profile |
 | `PUT` | `/api/servers/{alias}` | Update a server profile by alias |
 | `DELETE` | `/api/servers/{alias}` | Remove a server profile by alias |
+| `GET` | `/api/sshkeys` | List SSH private key files found in local `~/.ssh` |
+| `POST` | `/api/sshkeys/select` | Open the native OS file picker to choose an SSH private key file (server-local only) |
 | `GET` | `/api/workspaces` | List all recorded workspace paths |
 | `POST` | `/api/workspaces/add` | Add a workspace path manually |
 | `DELETE` | `/api/workspaces` | Remove a workspace path (body: `{"path":"..."}`) |

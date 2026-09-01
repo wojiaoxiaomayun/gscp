@@ -165,6 +165,7 @@ gscp init
     "is_default": true,
     "local_path": "./dist",
     "to_path": "/var/www/dev",
+    "ignore": ["static", "*.map"],
     "commands": [
       "cd /var/www/dev",
       "sudo systemctl restart dev-app"
@@ -203,6 +204,7 @@ gscp init
   - 字符串数组：多个文件或目录路径，如 `["./dist", "./config.json", "./scripts"]`
 - `to_path`：远程目标目录
 - `commands`：上传完成后要执行的命令列表
+- `ignore`：可选，上传时要排除的文件或目录列表。对每个上传源独立生效（`local_path` 的每个条目或每个 `upload_pairs[].from`）。详见下文「忽略文件（ignore）」。
 
 ### 多路径上传示例
 
@@ -245,6 +247,7 @@ gscp init
       { "from": "./frontend/dist", "to": "/var/www/frontend" },
       { "from": "./backend/bin",   "to": "/opt/app/bin" }
     ],
+    "ignore": ["node_modules"],
     "commands": [
       "sudo systemctl restart app"
     ]
@@ -259,6 +262,30 @@ gscp init
   - `to`：该条目对应的远程目标目录
 
 每个上传对按顺序依次执行，并分别展示上传进度。
+
+### 忽略文件（ignore）
+
+`ignore` 用于排除不需要上传的文件或目录。它对每个上传源独立生效：`local_path`（字符串或数组）的每个条目、以及每个 `upload_pairs[].from`，都分别作为独立的根目录进行匹配。
+
+```json
+{
+  "dev": {
+    "active_alias": "dev-server",
+    "local_path": "./dist",
+    "to_path": "/var/www/app",
+    "ignore": ["static", "*.map"],
+    "commands": []
+  }
+}
+```
+
+匹配规则：
+
+- **不含 `/`** 的模式按名称在任意层级匹配：`static` 会跳过源目录下任意位置的整个 `static` 子树，`*.map` 会跳过所有 `.map` 文件；支持标准通配符（`?`、`[a-z]`、`*`）。
+- **含 `/`** 的模式以源目录为根锚定，按路径段逐段匹配：`static/**` 跳过 `static/` 下的所有内容，`assets/**/cache` 跳过 `assets` 下任意层级的 `cache` 目录。
+- 匹配到目录会跳过其整个子树；如果上传源本身（根）就是被排除的文件，则该源整体不上传。
+- 模式中的 Windows 反斜杠会自动归一化。
+- 在 JSON 文件中 `ignore` 为字符串数组；在可视化编辑器中每行一条，空白条目会被忽略。
 
 ## 运行部署
 

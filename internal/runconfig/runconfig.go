@@ -54,7 +54,14 @@ type Target struct {
 	LocalPaths  []string     `json:"-"`
 	ToPath      string       `json:"to_path,omitempty"`
 	UploadPairs []UploadPair `json:"upload_pairs,omitempty"`
-	Commands    []string     `json:"commands"`
+	// Ignore holds glob patterns for paths to exclude from uploads. Each
+	// pattern is matched against the path relative to the local source root
+	// (each local_path entry or each upload_pairs from entry). A pattern
+	// without "/" matches a file or directory of that name at any depth;
+	// a pattern containing "/" is anchored at the source root. Matching a
+	// directory excludes its whole subtree. Applies to both upload modes.
+	Ignore   []string `json:"ignore,omitempty"`
+	Commands []string `json:"commands"`
 }
 
 func (t *Target) UnmarshalJSON(data []byte) error {

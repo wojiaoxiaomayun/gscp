@@ -204,6 +204,7 @@ func (m *runModel) startRunCmd() tea.Cmd {
 			LocalPaths:  target.LocalPaths,
 			ToPath:      target.ToPath,
 			UploadPairs: pairs,
+			Ignore:      target.Ignore,
 			Commands:    target.Commands,
 		})
 		ch <- runFinishedMsg{err: err}

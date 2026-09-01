@@ -30,6 +30,7 @@ type Plan struct {
 	LocalPaths  []string
 	ToPath      string
 	UploadPairs []UploadPair // takes precedence over LocalPaths+ToPath when non-empty
+	Ignore      []string
 	Commands    []string
 }
 
@@ -112,7 +113,7 @@ func (r Runner) Run(server config.Server, workingDir string, plan Plan) error {
 			if err != nil {
 				return fmt.Errorf("stat upload_pairs from %q: %w", pair.From, err)
 			}
-			items, err := buildUploadPlan(localPath, pair.To, info)
+			items, err := buildUploadPlan(localPath, pair.To, info, plan.Ignore)
 			if err != nil {
 				return err
 			}
@@ -139,7 +140,7 @@ func (r Runner) Run(server config.Server, workingDir string, plan Plan) error {
 			if err != nil {
 				return fmt.Errorf("stat local_path %q: %w", localPath, err)
 			}
-			items, err := buildUploadPlan(localPath, plan.ToPath, info)
+			items, err := buildUploadPlan(localPath, plan.ToPath, info, plan.Ignore)
 			if err != nil {
 				return err
 			}
@@ -298,10 +299,17 @@ func expandHome(p string) string {
 	return p
 }
 
-func buildUploadPlan(localPath, remoteBase string, info fs.FileInfo) ([]uploadItem, error) {
+// buildUploadPlan walks a local file or directory and lists every file to be
+// uploaded. ignore holds glob patterns (see ignoreMatcher) for entries that
+// must be excluded, matched against paths relative to the local root.
+func buildUploadPlan(localPath, remoteBase string, info fs.FileInfo, ignore []string) ([]uploadItem, error) {
 	remoteBase = path.Clean(filepath.ToSlash(remoteBase))
+	matcher := newIgnoreMatcher(ignore)
 
 	if !info.IsDir() {
+		if matcher.match(filepath.Base(localPath)) {
+			return nil, nil
+		}
 		return []uploadItem{{
 			LocalPath:  localPath,
 			RemotePath: path.Join(remoteBase, filepath.Base(localPath)),
@@ -314,6 +322,18 @@ func buildUploadPlan(localPath, remoteBase string, info fs.FileInfo) ([]uploadIt
 		if err != nil {
 			return err
 		}
+		relative, err := filepath.Rel(localPath, current)
+		if err != nil {
+			return fmt.Errorf("build relative path: %w", err)
+		}
+		relSlash := filepath.ToSlash(relative)
+
+		if matcher.match(relSlash) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if d.IsDir() {
 			return nil
 		}
@@ -322,14 +342,10 @@ func buildUploadPlan(localPath, remoteBase string, info fs.FileInfo) ([]uploadIt
 		if err != nil {
 			return fmt.Errorf("read file info: %w", err)
 		}
-		relative, err := filepath.Rel(localPath, current)
-		if err != nil {
-			return fmt.Errorf("build relative path: %w", err)
-		}
 
 		items = append(items, uploadItem{
 			LocalPath:  current,
-			RemotePath: path.Join(remoteBase, filepath.ToSlash(relative)),
+			RemotePath: path.Join(remoteBase, relSlash),
 			Size:       fileInfo.Size(),
 		})
 		return nil
@@ -339,6 +355,93 @@ func buildUploadPlan(localPath, remoteBase string, info fs.FileInfo) ([]uploadIt
 	}
 
 	return items, nil
+}
+
+// ignoreMatcher reports whether a path relative to a local upload root should
+// be excluded from the upload, using gitignore-style glob patterns.
+//
+// Supported syntax (relative to the source root, "/" separators):
+//
+//   - A pattern without "/" matches a file or directory of that name at any
+//     depth (e.g. "static" or "*.map"). Matching a directory excludes its
+//     whole subtree.
+//   - A pattern containing "/" is anchored at the source root and matches the
+//     full relative path (e.g. "dist/static" or "assets/**/cache"). A
+//     trailing "/" is ignored (it merely marks the pattern as directory-only).
+//   - "*" matches any run of non-separator characters within one path
+//     segment; "?" matches a single character; "[...]" character classes work
+//     too (delegated to path.Match).
+//   - "**" as a whole segment matches zero or more path segments.
+type ignoreMatcher struct {
+	names    []string   // patterns without "/"
+	patterns [][]string // patterns with "/", split into segments
+}
+
+func newIgnoreMatcher(patterns []string) *ignoreMatcher {
+	m := &ignoreMatcher{}
+	for _, p := range patterns {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		p = filepath.ToSlash(p)
+		p = strings.TrimPrefix(p, "./")
+		if strings.Contains(p, "/") {
+			p = strings.TrimSuffix(p, "/")
+			if p != "" {
+				m.patterns = append(m.patterns, strings.Split(p, "/"))
+			}
+		} else {
+			m.names = append(m.names, p)
+		}
+	}
+	return m
+}
+
+// match reports whether rel (slash-separated relative path) is excluded.
+func (m *ignoreMatcher) match(rel string) bool {
+	if len(m.names) > 0 {
+		base := path.Base(rel)
+		for _, name := range m.names {
+			if ok, err := path.Match(name, base); err == nil && ok {
+				return true
+			}
+		}
+	}
+	if len(m.patterns) == 0 {
+		return false
+	}
+	segs := strings.Split(rel, "/")
+	for _, pat := range m.patterns {
+		if matchSegments(pat, segs) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchSegments matches a pattern split on "/" against path segments,
+// supporting "**" as a segment matching zero or more segments.
+func matchSegments(pat, segs []string) bool {
+	if len(pat) == 0 {
+		return len(segs) == 0
+	}
+	if pat[0] == "**" {
+		for i := 0; i <= len(segs); i++ {
+			if matchSegments(pat[1:], segs[i:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(segs) == 0 {
+		return false
+	}
+	ok, err := path.Match(pat[0], segs[0])
+	if err != nil || !ok {
+		return false
+	}
+	return matchSegments(pat[1:], segs[1:])
 }
 
 func uploadItems(client *sftp.Client, items []uploadItem, progress *progressReporter) error {

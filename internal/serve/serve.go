@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,6 +31,8 @@ func Run(addr string) error {
 	mux.HandleFunc("/api/workspaces/add", handleWorkspaceAdd)
 	mux.HandleFunc("/api/genv/read", handleGenvRead)
 	mux.HandleFunc("/api/genv/write", handleGenvWrite)
+	mux.HandleFunc("/api/sshkeys", handleSSHKeys)
+	mux.HandleFunc("/api/sshkeys/select", handleSSHKeySelect)
 	mux.HandleFunc("/api/scan", handleScan)
 	mux.HandleFunc("/api/settings", handleSettings)
 
@@ -44,7 +48,7 @@ func Run(addr string) error {
 	srv := &http.Server{
 		Handler:      mux,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		WriteTimeout: sshKeyDialogTimeout,
 	}
 
 	return srv.Serve(ln)
@@ -62,6 +66,8 @@ func RunWithContext(ctx context.Context, addr string) error {
 	mux.HandleFunc("/api/workspaces/add", handleWorkspaceAdd)
 	mux.HandleFunc("/api/genv/read", handleGenvRead)
 	mux.HandleFunc("/api/genv/write", handleGenvWrite)
+	mux.HandleFunc("/api/sshkeys", handleSSHKeys)
+	mux.HandleFunc("/api/sshkeys/select", handleSSHKeySelect)
 	mux.HandleFunc("/api/scan", handleScan)
 	mux.HandleFunc("/api/settings", handleSettings)
 
@@ -77,7 +83,7 @@ func RunWithContext(ctx context.Context, addr string) error {
 	srv := &http.Server{
 		Handler:      mux,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		WriteTimeout: sshKeyDialogTimeout,
 	}
 
 	go func() {
@@ -265,6 +271,205 @@ func handleServerByAlias(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleSSHKeys handles GET /api/sshkeys.
+// It scans the user's ~/.ssh directory (one level deep) for private key files
+// so the web UI can offer them as a picker instead of manual path typing.
+func handleSSHKeys(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	keys, sshDir := findSSHKeys()
+	jsonOK(w, map[string]any{
+		"ssh_dir": sshDir,
+		"keys":    keys,
+	})
+}
+
+// handleSSHKeySelect handles POST /api/sshkeys/select.
+// Browsers only expose a fake path (`C:\fakepath\...`) for a native file
+// input, so the real OS file-open dialog runs on the machine that hosts the
+// gscp server — the normal `gscp serve` setup. The handler blocks until the
+// user picks a file or cancels, then returns the chosen absolute path.
+func handleSSHKeySelect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !isLoopbackRequest(r) {
+		jsonError(w, "文件选择器只能在服务器本机使用", http.StatusForbidden)
+		return
+	}
+	path, err := showFilePickerForSSHKey()
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, map[string]string{"path": path})
+}
+
+// isLoopbackRequest reports whether the request came from the loopback
+// interface, i.e. the browser runs on the same machine as the server.
+func isLoopbackRequest(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// sshKeyDialogTimeout bounds how long a native SSH key file dialog may stay
+// open. The web server's write timeout must be at least as generous so the
+// request is not cut off while the user browses for a file.
+const sshKeyDialogTimeout = 10 * time.Minute
+
+// showFilePickerForSSHKey opens a native file-open dialog on the machine
+// running the server, pre-positioned in ~/.ssh when it exists, and returns
+// the chosen absolute path. An empty string means the user cancelled.
+func showFilePickerForSSHKey() (string, error) {
+	home, _ := os.UserHomeDir()
+	startDir := filepath.Join(home, ".ssh")
+
+	ctx, cancel := context.WithTimeout(context.Background(), sshKeyDialogTimeout)
+	defer cancel()
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.CommandContext(ctx, "powershell", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-Command", windowsSSHKeyPickerScript(startDir))
+	case "darwin":
+		cmd = exec.CommandContext(ctx, "osascript", "-e", macSSHKeyPickerScript(startDir))
+	default:
+		cmd = exec.CommandContext(ctx, "zenity", "--file-selection", "--title=选择 SSH 私钥文件", "--filename="+startDir)
+	}
+
+	out, err := cmd.Output()
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("文件选择超时")
+	}
+	return pickerOutput(out, err)
+}
+
+// pickerOutput turns a native picker's output into a result: the chosen
+// path, "" for a user cancel, or an error when the helper could not run.
+func pickerOutput(out []byte, err error) (string, error) {
+	if err == nil {
+		return strings.TrimSpace(string(out)), nil
+	}
+	// A non-zero exit with no output (or a "cancel" message) means the user
+	// dismissed the dialog (zenity exits 1, osascript reports "User
+	// canceled"). Any other error means the helper itself failed to run.
+	if ee, ok := err.(*exec.ExitError); ok && strings.TrimSpace(string(out)) == "" {
+		stderr := ""
+		if ee.Stderr != nil {
+			stderr = string(ee.Stderr)
+		}
+		if strings.TrimSpace(stderr) == "" || strings.Contains(strings.ToLower(stderr), "cancel") {
+			return "", nil
+		}
+	}
+	return "", fmt.Errorf("无法打开文件选择器: %v", err)
+}
+
+// windowsSSHKeyPickerScript returns the PowerShell script that shows a
+// Windows OpenFileDialog and prints the chosen path. `powershell -STA` is
+// required for WinForms dialogs to work.
+func windowsSSHKeyPickerScript(startDir string) string {
+	dir := strings.ReplaceAll(startDir, "'", "''")
+	return fmt.Sprintf(`Add-Type -AssemblyName System.Windows.Forms
+$d = New-Object System.Windows.Forms.OpenFileDialog
+$d.Title = '选择 SSH 私钥文件'
+$d.Filter = 'SSH 私钥文件 (*.pem;*.key;*.p8;*)|*.pem;*.key;*.p8;*|所有文件 (*.*)|*.*'
+$d.Multiselect = $false
+if (Test-Path -LiteralPath '%s') { $d.InitialDirectory = '%s' }
+if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $d.FileName }
+`, dir, dir)
+}
+
+// macSSHKeyPickerScript returns the AppleScript that shows an open-file
+// dialog and prints the chosen POSIX path.
+func macSSHKeyPickerScript(startDir string) string {
+	dir := strings.ReplaceAll(startDir, `"`, `\"`)
+	return fmt.Sprintf(`try
+	set d to (POSIX file "%s") as alias
+	set f to choose file with prompt "选择 SSH 私钥文件" default location d
+on error
+	set f to choose file with prompt "选择 SSH 私钥文件"
+end try
+POSIX path of f`, dir)
+}
+
+// knownNonKeyFiles are common ~/.ssh entries that are not private keys.
+var knownNonKeyFiles = map[string]bool{
+	"config":      true,
+	"environment": true,
+	"rc":          true,
+	"ssh_config":  true,
+	"readme":      true,
+	"password":    true,
+}
+
+// isSSHKeyFile reports whether a file entry is plausibly a private key file.
+func isSSHKeyFile(name string) bool {
+	if strings.HasPrefix(name, ".") {
+		return false
+	}
+	lower := strings.ToLower(name)
+	if knownNonKeyFiles[lower] {
+		return false
+	}
+	// authorized_keys* and known_hosts* — including rotated backups such as
+	// known_hosts.old — are verification/host files, never private keys.
+	if strings.HasPrefix(lower, "authorized_keys") || strings.HasPrefix(lower, "known_hosts") {
+		return false
+	}
+	if strings.HasSuffix(lower, ".pub") {
+		return false
+	}
+	if strings.HasSuffix(lower, ".ppk") {
+		return false
+	}
+	if strings.HasPrefix(lower, "ssh_host_") {
+		return false
+	}
+	return true
+}
+
+// findSSHKeys returns absolute paths of private key files under ~/.ssh
+// (including subdirectories such as ~/.ssh/keys/), sorted, together with
+// the .ssh directory itself. An empty result is returned when the home
+// directory or ~/.ssh cannot be determined.
+func findSSHKeys() (keys []string, sshDir string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return []string{}, ""
+	}
+	sshDir = filepath.Join(home, ".ssh")
+	if _, err := os.Stat(sshDir); err != nil {
+		return []string{}, sshDir
+	}
+	_ = filepath.WalkDir(sshDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return filepath.SkipDir
+		}
+		if d.IsDir() {
+			// Descend into subdirectories so ~/.ssh/keys/gcp.pem is found.
+			return nil
+		}
+		if isSSHKeyFile(d.Name()) {
+			keys = append(keys, path)
+		}
+		return nil
+	})
+	sort.Strings(keys)
+	if keys == nil {
+		keys = []string{}
+	}
+	return keys, sshDir
 }
 
 func jsonOK(w http.ResponseWriter, v any) {

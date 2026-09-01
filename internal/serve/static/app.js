@@ -78,7 +78,15 @@ function renderList() {
               </div>
               <div class="field">
                 <label>SSH 私钥路径（清空即移除密钥）</label>
-                <input id="e-keypath-${esc(s.alias)}" value="${esc(s.key_path || '')}" placeholder="~/.ssh/id_rsa" />
+                <div class="key-picker">
+                  <input id="e-keypath-${esc(s.alias)}" value="${esc(s.key_path || '')}" placeholder="~/.ssh/id_rsa" autocomplete="off" />
+                  <button type="button" class="key-picker-btn key-picker-file" aria-label="打开文件选择器选择密钥文件" title="打开文件选择器选择密钥文件" onclick="pickSSHKeyFile(this)">
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h2.4l1.4 1.6h5.2A1.5 1.5 0 0 1 13.5 5.6v5.9a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 11.5v-7.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+                  </button>
+                  <button type="button" class="key-picker-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="从本机 ~/.ssh 选择密钥" title="从本机选择密钥" onclick="toggleKeyPicker(this)">
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M3.5 5.5L7.5 9.5L11.5 5.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                </div>
               </div>
               <div class="field" style="grid-column:1/-1">
                 <label>私钥密码（留空则不修改）</label>
@@ -94,6 +102,7 @@ function renderList() {
         </div>
       </div>
     </div>`).join('');
+  initKeyPickers();
 }
 
 //  Edit 
@@ -244,6 +253,197 @@ function showToast(msg, isError) {
   document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') addServer(); });
 });
 document.getElementById('import-url').addEventListener('keydown', e => { if (e.key === 'Enter') importFromURL(); });
+
+// ═══════════════════════════════════════════════════════
+//  SSH key picker  (choose key from local ~/.ssh)
+//  Menu is rendered on document.body (fixed position) so
+//  it escapes overflow clipping from .panel / .edit-panel.
+// ═══════════════════════════════════════════════════════
+let sshKeyList = [];
+let sshKeyDir = '';
+let sshKeysLoaded = false;
+let activeKeyPicker = null;
+
+async function loadSSHKeys() {
+  try {
+    const res = await fetch('/api/sshkeys');
+    if (!res.ok) return;
+    const data = await res.json();
+    sshKeyList = Array.isArray(data.keys) ? data.keys : [];
+    sshKeyDir = data.ssh_dir || '';
+  } catch(e) { /* fall through: menu shows empty state, manual input stays available */ }
+  sshKeysLoaded = true;
+}
+
+function initKeyPickers() {
+  document.querySelectorAll('.key-picker input').forEach(setupKeyPicker);
+}
+
+function setupKeyPicker(input) {
+  const picker = input.closest('.key-picker');
+  if (!picker || picker.dataset.pickerReady) return;
+  picker.dataset.pickerReady = '1';
+  input.addEventListener('keydown', e => {
+    if (activeKeyPicker !== picker) {
+      // ArrowDown in the input opens the menu with the first item highlighted
+      if (e.key === 'ArrowDown') { e.preventDefault(); openKeyPicker(picker, true); }
+      return;
+    }
+    // Menu is open for this picker — navigate with the input focused
+    const menu = picker._keyMenu;
+    if (!menu) return;
+    const items = Array.prototype.slice.call(menu.querySelectorAll('.key-picker-item'));
+    const cur = menu.querySelector('.key-picker-item.hl');
+    const idx = cur ? items.indexOf(cur) : -1;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      highlightPickerItem(items[cur ? Math.min(idx + 1, items.length - 1) : 0], menu);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      highlightPickerItem(items[cur ? Math.max(idx - 1, 0) : items.length - 1], menu);
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      if (cur) { e.preventDefault(); selectPickerItem(cur, picker); }
+      else closeAllKeyPickers(); // no highlight: close and let default action run
+    } else if (e.key === 'Escape') {
+      e.preventDefault(); closeAllKeyPickers();
+    } else if (e.key === 'Tab') {
+      closeAllKeyPickers();
+    }
+  });
+}
+
+function toggleKeyPicker(btn) {
+  const picker = btn.closest('.key-picker');
+  if (!picker) return;
+  if (picker.classList.contains('open')) closeAllKeyPickers();
+  else openKeyPicker(picker, false);
+}
+
+async function pickSSHKeyFile(btn) {
+  closeAllKeyPickers();
+  btn.disabled = true;
+  btn.classList.add('busy');
+  const input = btn.parentElement.querySelector('input');
+  try {
+    const r = await fetch('/api/sshkeys/select', { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    if (d.path) {
+      input.value = d.path;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus();
+      showToast('已选择密钥文件');
+    }
+  } catch (e) {
+    showToast('打开文件选择器失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('busy');
+  }
+}
+
+function openKeyPicker(picker, highlightFirst) {
+  closeAllKeyPickers();
+  activeKeyPicker = picker;
+  let menu = picker._keyMenu;
+  if (!menu) {
+    menu = document.createElement('div');
+    menu.className = 'key-picker-menu';
+    menu.setAttribute('role', 'listbox');
+    document.body.appendChild(menu);
+    menu.addEventListener('click', e => {
+      const item = e.target.closest('.key-picker-item');
+      if (item) {
+        e.preventDefault();
+        selectPickerItem(item, picker);
+      }
+    });
+    picker._keyMenu = menu;
+  }
+  menu.innerHTML = keyPickerMenuHTML();
+  menu.classList.add('open');
+  positionKeyPickerMenu(menu, picker);
+  picker.classList.add('open');
+  const btn = picker.querySelector('.key-picker-btn');
+  if (btn) btn.setAttribute('aria-expanded', 'true');
+  if (highlightFirst) highlightPickerItem(menu.querySelector('.key-picker-item'), menu);
+}
+
+function positionKeyPickerMenu(menu, picker) {
+  const r = picker.getBoundingClientRect();
+  const mh = menu.offsetHeight;
+  const gap = 4;
+  let top = r.bottom + gap;
+  // Flip above the trigger when there is not enough room below
+  if (window.innerHeight - r.bottom - gap < mh && r.top - gap - mh > 0) {
+    top = r.top - gap - mh;
+  }
+  menu.style.top = top + 'px';
+  menu.style.left = r.left + 'px';
+  menu.style.width = Math.max(r.width, 220) + 'px';
+}
+
+function keyPickerMenuHTML() {
+  if (!sshKeysLoaded) return '<div class="key-picker-empty">正在扫描 ~/.ssh …</div>';
+  if (!sshKeyList.length) return '<div class="key-picker-empty">未在本机 ~/.ssh 发现密钥文件，可手动输入路径</div>';
+  return sshKeyList.map((p, i) => {
+    const name = p.split(/[\\/]/).pop() || p;
+    const dir = p.slice(0, -name.length);
+    return `<div class="key-picker-item" role="option" data-idx="${i}" aria-selected="false">
+      <span class="key-picker-name">${esc(name)}</span>
+      <span class="key-picker-path">${dir ? esc(dir) : ''}</span>
+    </div>`;
+  }).join('');
+}
+
+function highlightPickerItem(item, menu) {
+  if (!item || !menu) return;
+  menu.querySelectorAll('.key-picker-item').forEach(el => { el.classList.remove('hl'); el.setAttribute('aria-selected', 'false'); });
+  item.classList.add('hl');
+  item.setAttribute('aria-selected', 'true');
+  // Manual scroll (scrollIntoView would fire the capture-phase scroll-close handler)
+  const it = item.offsetTop;
+  const ih = item.offsetHeight;
+  if (it < menu.scrollTop) menu.scrollTop = it;
+  else if (it + ih > menu.scrollTop + menu.clientHeight) menu.scrollTop = it + ih - menu.clientHeight;
+}
+
+function selectPickerItem(item, picker) {
+  const idx = parseInt(item.dataset.idx, 10);
+  const path = sshKeyList[idx];
+  const input = picker.querySelector('input');
+  if (input && path) {
+    input.value = path;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+  }
+  closeAllKeyPickers();
+}
+
+function closeAllKeyPickers() {
+  if (activeKeyPicker) {
+    activeKeyPicker.classList.remove('open');
+    const btn = activeKeyPicker.querySelector('.key-picker-btn');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+    if (activeKeyPicker._keyMenu) activeKeyPicker._keyMenu.classList.remove('open');
+    activeKeyPicker = null;
+  }
+}
+
+// Close any open picker when clicking elsewhere, scrolling, or resizing
+document.addEventListener('click', function(e) {
+  if (e.target.closest && e.target.closest('.key-picker')) return;
+  closeAllKeyPickers();
+});
+window.addEventListener('scroll', function(e) {
+  // Allow wheel-scrolling inside the open menu itself
+  if (activeKeyPicker && activeKeyPicker._keyMenu && e.target === activeKeyPicker._keyMenu) return;
+  closeAllKeyPickers();
+}, true);
+window.addEventListener('resize', closeAllKeyPickers);
+
+loadSSHKeys();
+initKeyPickers();
 
 loadServers();
 loadWorkspaces();
@@ -522,6 +722,9 @@ function _collectTargetFields(key) {
   if (defaultEl) t.is_default   = defaultEl.value === 'true';
   if (cmdsEl)    t.commands     = cmdsEl.value.split('\n').map(s => s.trim()).filter(Boolean);
 
+  const ignoreEl = document.getElementById('tv-ignore-' + k);
+  if (ignoreEl) t.ignore = ignoreEl.value.split('\n').map(s => s.trim()).filter(Boolean);
+
   const isPairs = t._upload_mode === 'pairs' || (Array.isArray(t.upload_pairs) && t.upload_pairs !== undefined);
   if (isPairs) {
     // Collect pairs from DOM
@@ -664,6 +867,13 @@ function renderVisual() {
 
             <div class="target-form-grid" style="margin-top:0.65rem">
               <div class="field" style="grid-column:1/-1">
+                <label>IGNORE（忽略文件/目录，每行一条，作用于上方 LOCAL_PATH 或各 from）</label>
+                <textarea id="tv-ignore-${esc(key)}" oninput="markDirty()" placeholder="static&#10;*.map&#10;node_modules">${esc((t.ignore || []).join('\n'))}</textarea>
+              </div>
+            </div>
+
+            <div class="target-form-grid" style="margin-top:0.65rem">
+              <div class="field" style="grid-column:1/-1">
                 <label>COMMANDS（每行一条）</label>
                 <textarea id="tv-cmds-${esc(key)}" oninput="markDirty()" placeholder="cd /var/www/app&#10;sudo systemctl restart app">${esc(commands)}</textarea>
               </div>
@@ -786,6 +996,7 @@ function buildRaw() {
         active_alias: t.active_alias || t.activeAlias || '',
         is_default: !!(t.is_default || t.isDefault),
         upload_pairs: (t.upload_pairs || []).filter(p => p.from || p.to),
+        ignore: t.ignore || [],
         commands: t.commands || []
       };
     } else {
@@ -795,6 +1006,7 @@ function buildRaw() {
         is_default: !!(t.is_default || t.isDefault),
         local_path: Array.isArray(localPath) ? localPath : localPath,
         to_path: t.to_path || t.toPath || '',
+        ignore: t.ignore || [],
         commands: t.commands || []
       };
     }

@@ -99,7 +99,15 @@
             </div>
             <div class="field">
               <label>SSH 私钥路径（可选）</label>
-              <input id="f-keypath" placeholder="~/.ssh/id_rsa" autocomplete="off" />
+              <div class="key-picker">
+                <input id="f-keypath" placeholder="~/.ssh/id_rsa" autocomplete="off" />
+                <button type="button" class="key-picker-btn key-picker-file" onclick="pickSSHKeyFile(this)" aria-label="打开文件选择器选择密钥文件" title="打开文件选择器选择密钥文件">
+                  <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h2.4l1.4 1.6h5.2A1.5 1.5 0 0 1 13.5 5.6v5.9a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 11.5v-7.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+                </button>
+                <button type="button" class="key-picker-btn" onclick="toggleKeyPicker(this)" aria-haspopup="listbox" aria-expanded="false" aria-label="从本机 ~/.ssh 选择密钥" title="从本机选择密钥">
+                  <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M3.5 5.5L7.5 9.5L11.5 5.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
             </div>
             <div class="field">
               <label>私钥密码（可选）</label>
